@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskmivra-crystal-voice"
+version = "0.1.0"
+description = "Offline, profile-conditioned target-speaker extraction laboratory"
+requires-python = ">=3.12,<3.15"
+license = { text = "Proprietary" }
+
+[project.scripts]
+crystal-voice = "crystal_voice.cli:main"
+
+[tool.setuptools.package-data]
+crystal_voice = ["static/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

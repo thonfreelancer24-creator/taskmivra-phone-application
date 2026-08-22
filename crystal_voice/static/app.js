@@ -1,0 +1,18 @@
+const $ = id => document.getElementById(id);
+let recorder = null;
+async function wavRecording(button, seconds, status) {
+  if (recorder) { recorder.stop(); return null; }
+  const stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  const context = new AudioContext({sampleRate:48000}), source=context.createMediaStreamSource(stream), processor=context.createScriptProcessor(4096,1,1), chunks=[];
+  processor.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  source.connect(processor); processor.connect(context.destination); recorder={stop}; let elapsed=0;
+  button.classList.add('stop'); button.textContent='Stop recording'; status.textContent=`Recording 0.0 / ${seconds}s`;
+  const timer=setInterval(()=>{elapsed+=.1;status.textContent=`Recording ${elapsed.toFixed(1)} / ${seconds}s`;if(elapsed>=seconds)stop()},100);
+  return await new Promise(resolve=>{function stop(){if(!recorder)return;clearInterval(timer);processor.disconnect();source.disconnect();stream.getTracks().forEach(t=>t.stop());const rate=context.sampleRate;context.close();recorder=null;button.classList.remove('stop');const length=chunks.reduce((n,c)=>n+c.length,0), pcm=new Float32Array(length);let at=0;for(const c of chunks){pcm.set(c,at);at+=c.length}resolve(encodeWav(pcm,rate));}});
+}
+function encodeWav(samples,rate){const b=new ArrayBuffer(44+samples.length*2),v=new DataView(b),s=(o,x)=>[...x].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt()));s(0,'RIFF');v.setUint32(4,36+samples.length*2,true);s(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);s(36,'data');v.setUint32(40,samples.length*2,true);samples.forEach((x,i)=>v.setInt16(44+i*2,Math.max(-32768,Math.min(32767,Math.round(x*32767))),true));return b}
+async function send(path,wav){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'audio/wav'},body:wav}),j=await r.json();if(!r.ok)throw Error(j.error);return j}
+$('enroll').onclick=async()=>{try{const wav=await wavRecording($('enroll'),4,$('enrollStatus'));if(!wav)return;const j=await send('/api/enroll',wav);$('enrollStatus').textContent=`Profile ready · ${j.duration_seconds.toFixed(2)}s · SHA-256 ${j.sha256.slice(0,12)}…`;$('challenge').disabled=false;$('enroll').textContent='Re-record profile'}catch(e){$('enrollStatus').textContent=e.message;recorder=null}};
+$('challenge').onclick=async()=>{try{const wav=await wavRecording($('challenge'),8,$('challengeStatus'));if(!wav)return;$('challengeStatus').textContent='Extracting target speaker…';const j=await send('/api/process',wav);$('challenge').textContent='Record another challenge';$('challengeStatus').textContent=j.same_take_verified?'Same-take fingerprint verified':'VERIFICATION FAILED';$('results').hidden=false;$('raw').src='/audio/raw.wav?'+Date.now();$('processed').src='/audio/processed.wav?'+Date.now();$('metrics').innerHTML=Object.entries({capture:j.capture_id.slice(0,16)+'…',model:j.model,conditioned:j.conditioned_by_reference,raw_peak:j.raw_peak_dbfs.toFixed(2)+' dBFS',processed_peak:j.processed_peak_dbfs.toFixed(2)+' dBFS',clipped:j.clipped_samples,RTF:j.real_time_factor.toFixed(3),attenuation:j.attenuation_db.toFixed(2)+' dB'}).map(([k,v])=>`<div class=metric>${k}<br><strong>${v}</strong></div>`).join('')}catch(e){$('challengeStatus').textContent=e.message;recorder=null}};
+fetch('/api/status').then(r=>r.json()).then(j=>{$('ready').textContent=j.ready?'MODEL READY':'NOT READY';$('version').textContent=j.version;$('ready').title=j.model+' '+j.model_version}).catch(e=>$('ready').textContent='STARTUP ERROR');
+
