@@ -6,6 +6,9 @@ VENV="$ROOT/runtime/venv-macos-x86_64-py312"
 WESEP_HOME="$ROOT/runtime/wesep"
 WESEP_REVISION="99eca54b60300d39b9353d93cf285a14bba37854"
 WESEP_REMOTE="https://github.com/wenet-e2e/wesep.git"
+WESPEAKER_HOME="$ROOT/runtime/wespeaker"
+WESPEAKER_REVISION="58071902625ae6b072befda2932a38e9b38d5f26"
+WESPEAKER_REMOTE="https://github.com/wenet-e2e/wespeaker.git"
 RECOVERY_BASE="https://raw.githubusercontent.com/thonfreelancer24-creator/taskmivra-phone-application/codex/crystal-voice-wesep-quality-gate"
 PORT="${CRYSTAL_VOICE_PORT:-8768}"
 LOG="$ROOT/runtime/crystal-voice-wesep.log"
@@ -27,21 +30,31 @@ fi
 git -C "$WESEP_HOME" fetch origin "$WESEP_REVISION"
 git -C "$WESEP_HOME" checkout --detach "$WESEP_REVISION"
 
+if [[ ! -d "$WESPEAKER_HOME/.git" ]]; then
+  rm -rf "$WESPEAKER_HOME"
+  git clone --filter=blob:none "$WESPEAKER_REMOTE" "$WESPEAKER_HOME"
+fi
+git -C "$WESPEAKER_HOME" fetch origin "$WESPEAKER_REVISION"
+git -C "$WESPEAKER_HOME" checkout --detach "$WESPEAKER_REVISION"
+
 # Keep the already verified Intel-Mac torch/torchaudio foundation. Install only
-# WeSep's runtime requirements and the pinned upstream checkout.
+# the runtime pieces required by the released WeSep BSRNN-ECAPA path.
 "$VENV/bin/python" -m pip install \
   'kaldiio==2.18.0' 'silero-vad==5.1.2' 'soundfile==0.12.1'
+"$VENV/bin/python" -m pip install --no-deps -e "$WESPEAKER_HOME"
 "$VENV/bin/python" -m pip install --no-deps -e "$WESEP_HOME"
 "$VENV/bin/python" -m pip install -e "$ROOT"
 
-# Download/load the released English BSRNN-ECAPA model before reporting ready.
+# Fail here with a focused dependency message rather than later in the server.
 "$VENV/bin/python" - <<'PY'
+from wespeaker.models.speaker_model import get_speaker_model
 import wesep
+assert callable(get_speaker_model)
 model = wesep.load_model("english")
 model.set_device("cpu")
 model.set_vad(False)
 model.set_output_norm(False)
-print("WeSep English BSRNN-ECAPA model ready.")
+print("WeSep English BSRNN-ECAPA model ready with WeSpeaker.")
 PY
 
 "$VENV/bin/crystal-voice" ui --adapter wesep-native --port "$PORT" >"$LOG" 2>&1 &
