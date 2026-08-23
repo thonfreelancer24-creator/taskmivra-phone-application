@@ -93,7 +93,7 @@ def verify_sr_assets(checkpoint_dir: Path) -> Path:
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "model": "MossFormer2_SR_48K",
         "model_repository": "alibabasglab/MossFormer2_SR_48K",
-        "model_revision": "0453849",
+        "model_revision": "04538493591791ea5ee93676560c006bd7efc0d9",
         "assets": assets,
         "lock": str(lock.resolve()),
         "verified_against_existing_lock": verified,
