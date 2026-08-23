@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 from crystal_voice import __version__
 from crystal_voice.adapters.base import Extraction, TargetSpeakerExtractor
@@ -35,6 +36,7 @@ def handler_factory(session: Session):
             body = json.dumps(payload, allow_nan=False).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -46,16 +48,20 @@ def handler_factory(session: Session):
             return self.rfile.read(size)
 
         def do_GET(self):
-            if self.path == "/":
+            # Browsers may add cache-busting query strings such as
+            # /app.js?v=manual-stop-2 and /audio/raw.wav?12345. Route using the
+            # URL path only so versioned static assets and playback always work.
+            request_path = urlsplit(self.path).path
+            if request_path == "/":
                 body = (static / "index.html").read_bytes()
                 content_type = "text/html; charset=utf-8"
-            elif self.path == "/app.js":
+            elif request_path == "/app.js":
                 body = (static / "app.js").read_bytes()
                 content_type = "text/javascript; charset=utf-8"
-            elif self.path == "/api/status":
+            elif request_path == "/api/status":
                 return self._json(200, {"ready": True, "version": __version__, "model": session.adapter.name, "model_version": session.adapter.version, "profile_ready": session.profile is not None})
-            elif self.path in {"/audio/raw.wav", "/audio/isolation.wav", "/audio/processed.wav"}:
-                path = session.files / self.path.rsplit("/", 1)[1]
+            elif request_path in {"/audio/raw.wav", "/audio/isolation.wav", "/audio/processed.wav"}:
+                path = session.files / request_path.rsplit("/", 1)[1]
                 if not path.exists():
                     return self.send_error(404)
                 body, content_type = path.read_bytes(), "audio/wav"
@@ -70,13 +76,14 @@ def handler_factory(session: Session):
 
         def do_POST(self):
             try:
+                request_path = urlsplit(self.path).path
                 body = self._body()
                 audio = decode_wav(body)
-                if self.path == "/api/enroll":
+                if request_path == "/api/enroll":
                     session.profile = session.adapter.enroll(audio)
                     session.profile_sha256 = fingerprint(body)
                     return self._json(200, {"profile_ready": True, "duration_seconds": audio.duration, "sha256": session.profile_sha256})
-                if self.path == "/api/process":
+                if request_path == "/api/process":
                     if session.profile is None:
                         raise ValueError("Record a 3–5 second Target Voice Profile first")
                     capture_id = fingerprint(body)
