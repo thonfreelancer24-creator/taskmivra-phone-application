@@ -11,7 +11,7 @@ SOURCE_REVISION="6b3774dc79c46ae8bed2a4fa5f706f0ac8c75c61"
 CONFIG_NAME="config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"
 SR_CHECKPOINT_DIR="$RUNTIME/checkpoints/MossFormer2_SR_48K"
 SR_REPO="alibabasglab/MossFormer2_SR_48K"
-SR_REVISION="0453849"
+SR_REVISION="04538493591791ea5ee93676560c006bd7efc0d9"
 
 [[ "$(uname -s)" == Darwin ]] || { echo "ERROR: this installer is for macOS." >&2; exit 2; }
 [[ "$(uname -m)" == x86_64 ]] || { echo "ERROR: expected Intel macOS x86_64, got $(uname -m)." >&2; exit 2; }
