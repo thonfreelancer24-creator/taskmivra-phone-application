@@ -17,13 +17,14 @@ LOG="$ROOT/runtime/crystal-voice-wesep-se.log"
 [[ -x "$VENV/bin/python" ]] || { echo "ERROR: Crystal Voice environment is missing in $ROOT/runtime. Use the working folder 4." >&2; exit 2; }
 command -v git >/dev/null || { echo "ERROR: git is required." >&2; exit 2; }
 command -v curl >/dev/null || { echo "ERROR: curl is required." >&2; exit 2; }
-mkdir -p "$ROOT/crystal_voice/adapters" "$ROOT/runtime"
+mkdir -p "$ROOT/crystal_voice/adapters" "$ROOT/crystal_voice/static" "$ROOT/runtime"
 
 # Patch only recovery files into the already-working folder.
 curl -fsSL "$RECOVERY_BASE/crystal_voice/adapters/wesep_native.py" -o "$ROOT/crystal_voice/adapters/wesep_native.py"
 curl -fsSL "$RECOVERY_BASE/crystal_voice/adapters/wesep_enhanced.py" -o "$ROOT/crystal_voice/adapters/wesep_enhanced.py"
 curl -fsSL "$RECOVERY_BASE/crystal_voice/adapters/__init__.py" -o "$ROOT/crystal_voice/adapters/__init__.py"
 curl -fsSL "$RECOVERY_BASE/crystal_voice/server.py" -o "$ROOT/crystal_voice/server.py"
+curl -fsSL "$RECOVERY_BASE/crystal_voice/static/app.js" -o "$ROOT/crystal_voice/static/app.js"
 
 if [[ ! -d "$WESEP_HOME/.git" ]]; then
   rm -rf "$WESEP_HOME"
