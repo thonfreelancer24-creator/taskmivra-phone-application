@@ -18,9 +18,10 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_spex_assets(architecture: Path, config: Path, checkpoint: Path) -> Path:
+def verify_spex_assets(architecture: Path, networks: Path, config: Path, checkpoint: Path) -> Path:
     assets = [
         {"role": "architecture", "path": str(architecture.resolve()), "bytes": architecture.stat().st_size, "sha256": sha256(architecture)},
+        {"role": "network_wrapper", "path": str(networks.resolve()), "bytes": networks.stat().st_size, "sha256": sha256(networks)},
         {"role": "configuration", "path": str(config.resolve()), "bytes": config.stat().st_size, "sha256": sha256(config)},
         {"role": "checkpoint", "path": str(checkpoint.resolve()), "bytes": checkpoint.stat().st_size, "sha256": sha256(checkpoint)},
     ]
@@ -62,3 +63,35 @@ def verify_spex_assets(architecture: Path, config: Path, checkpoint: Path) -> Pa
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2))
     return destination
+
+
+def verify_sr_assets(source: Path) -> Path:
+    roots = [source]
+    cache = os.environ.get("MODELSCOPE_CACHE")
+    if cache:
+        roots.append(Path(cache))
+    assets = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix.lower() in {".pt", ".pth", ".bin", ".safetensors"}:
+                assets.append({"path": str(path.resolve()), "bytes": path.stat().st_size, "sha256": sha256(path)})
+    if not assets:
+        raise RuntimeError("MossFormer2_SR_48K loaded but no checkpoint asset was discoverable for SHA-256 verification")
+    identity = sorted(({key: item[key] for key in ("bytes", "sha256")} for item in assets), key=lambda item: item["sha256"])
+    lock = Path(os.environ.get("CRYSTAL_VOICE_SR_LOCK", "runtime/mossformer2-sr-assets.lock.json"))
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    verified = lock.exists()
+    if verified and json.loads(lock.read_text()) != identity:
+        raise RuntimeError(f"MossFormer2 SR assets differ from {lock}; refusing readiness")
+    if not verified:
+        lock.write_text(json.dumps(identity, indent=2))
+    report = Path(os.environ.get("CRYSTAL_VOICE_SR_PROVENANCE", "runtime/mossformer2-sr-provenance.json"))
+    report.write_text(json.dumps({
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "model": "MossFormer2_SR_48K",
+        "assets": assets,
+        "verified_against_existing_lock": verified,
+    }, indent=2))
+    return report

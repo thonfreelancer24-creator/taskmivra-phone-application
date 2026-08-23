@@ -11,7 +11,7 @@ No weights or upstream source code are redistributed by this milestone. The dire
 
 ## Evidence and blocker
 
-On 2026-08-22 the cloud development environment could not reach GitHub or ModelScope. The target installer therefore downloads on the Intel Mac, locks the architecture repository commit, and writes individual SHA-256 values for `SpEx_plus.py`, `config_wsj0-2mix_speech_SpEx-plus_2spk.yaml`, and `last_best_checkpoint.pt`. Every later startup refuses readiness if name, size, or hash differs. The loader also verifies `audio_sr: 8000`, `ref_sr: 8000`, the presence of `checkpoint["model"]`, and strict state-dictionary compatibility before inference.
+On 2026-08-22 the cloud development environment could not reach GitHub or the model host. The target installer therefore downloads on the Intel Mac, locks the architecture repository commit, and uses the Hugging Face repository API to snapshot `alibabasglab/log_wsj0-2mix_speech_SpEx-plus_2spk`. It recursively discovers—rather than guesses URLs for—the unique released YAML and `last_best_checkpoint.pt`, records their actual repository-relative locations and resolved snapshot revision, and writes individual SHA-256 values. Every later startup refuses readiness if name, size, or hash differs.
 
 Repository licensing does **not** automatically establish permission to redistribute every checkpoint or dataset derivative. Before evaluation, record the upstream commit, checkpoint filename, SHA-256, download page, model-card license, training-data provenance, framework versions, sample rate, and command below in a local evaluation record.
 
@@ -21,7 +21,7 @@ Repository licensing does **not** automatically establish permission to redistri
 ./scripts/start_crystal_voice_macos.sh
 ```
 
-The launcher requires macOS x86_64 and Python 3.12 and uses a unique clean venv. It imports the direct upstream SpEx+ network, constructs it from the released YAML, strictly loads `checkpoint["model"]`, and runs a deterministic mixture/reference self-test before starting the UI. Exact errors remain in `runtime/crystal-voice.log`. It installs only NumPy, Torch, Torchaudio, PyYAML, and this application—not the ClearVoice training dependency stack.
+The launcher requires macOS x86_64 and Python 3.12 and uses a unique clean venv. It builds the released YAML as a recursive attribute namespace, sets `args.device` to CPU, constructs upstream `network_wrapper(args)`, and strictly loads `checkpoint["model"]`. Inference supplies `[1,T]` mixture and `(reference [1,R], aux_len=[R], speakers=[-1])`. The launcher also installs the inference-only dependencies needed to preload released `MossFormer2_SR_48K`; it does not install the upstream training requirements file.
 
 The adapter explicitly converts microphone PCM from 48 kHz to the released model's 8 kHz rate with a 48-tap Hann-windowed sinc anti-aliasing filter, feeds mixture and 3–5 second reference tensors directly into SpEx+, and resamples the unnormalized extraction back to 48 kHz. It applies no spectral suppression or neural cleanup. Because information above 4 kHz is absent internally, this output is an isolation benchmark only.
 

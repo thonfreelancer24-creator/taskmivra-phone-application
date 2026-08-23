@@ -44,9 +44,9 @@ On Intel macOS, the complete real-model path is one command:
 ./scripts/start_crystal_voice_macos.sh
 ```
 
-It checks the host and Python version, creates a clean model-specific environment, acquires and locks the direct SpEx+ architecture plus released WSJ0-2mix YAML/checkpoint, verifies their SHA-256 values, confirms the exact 8 kHz configuration, strictly loads `checkpoint["model"]`, runs real inference in a startup self-test, waits for readiness, and only then opens the browser. It does not install the ClearVoice training dependency stack.
+It checks the host and Python version, creates a clean model-specific environment, acquires the direct SpEx+ architecture and uses `huggingface_hub.snapshot_download` to discover the released WSJ0-2mix YAML/checkpoint within the model repository, verifies their SHA-256 values, confirms the exact 8 kHz configuration, constructs the upstream `network_wrapper(args)`, strictly loads `checkpoint["model"]`, and runs the real `(mixture, (reference, aux_len, speakers))` inference contract. It also installs and preloads released `MossFormer2_SR_48K`, runs a full pipeline startup self-test, waits for readiness, and only then opens the browser.
 
-For plumbing inspection, `--adapter diagnostic` works but displays that its output is not reference-conditioned. The browser records PCM/WAV with browser audio enhancement disabled, uploads one challenge WAV once, and the server persists those exact bytes as Raw before processing. Both source IDs shown in results are the upload's SHA-256.
+The browser records one 48 kHz PCM/WAV challenge with browser audio enhancement disabled and persists those exact bytes before processing. It presents three outputs tied to that same SHA-256: **Raw Microphone**, **Target Voice Isolation**, and **Crystal Voice High-Fidelity Candidate**. No second challenge recording is requested.
 
 ## Acceptance state and limitations
 

@@ -11,6 +11,7 @@ import tempfile
 from crystal_voice.adapters.base import Extraction, TargetSpeakerExtractor
 from crystal_voice.adapters.clearervoice import ClearerVoiceSpExPlusAdapter, _plain_samples
 from crystal_voice.audio import Audio, encode_wav
+from crystal_voice.provenance import verify_sr_assets
 
 
 class SpExPlusMossFormerSRAdapter(TargetSpeakerExtractor):
@@ -35,12 +36,16 @@ class SpExPlusMossFormerSRAdapter(TargetSpeakerExtractor):
         if clear_voice is None:
             raise RuntimeError("SR checkout does not expose clearvoice.ClearVoice")
         self.restorer = clear_voice(task="speech_super_resolution", model_names=["MossFormer2_SR_48K"])
+        self.sr_provenance_path = verify_sr_assets(home)
 
     def enroll(self, reference: Audio) -> object:
         return self.extractor.enroll(reference)
 
     def extract(self, mixture: Audio, profile: object) -> Extraction:
         isolated = self.extractor.extract(mixture, profile)
+        return self.restore(isolated)
+
+    def restore(self, isolated: Extraction) -> Extraction:
         with tempfile.TemporaryDirectory(prefix="crystal-sr-") as directory:
             input_path = Path(directory) / "spex-48k.wav"
             input_path.write_bytes(encode_wav(isolated.audio))

@@ -10,7 +10,11 @@ export CRYSTAL_VOICE_SELFTEST_REPORT="$ROOT/runtime/startup-self-test.json"
 PORT="${CRYSTAL_VOICE_PORT:-8765}"
 LOG="$ROOT/runtime/crystal-voice.log"
 
-"$VENV/bin/crystal-voice" ui --adapter spexplus --port "$PORT" >"$LOG" 2>&1 &
+export CRYSTAL_VOICE_SR_HOME="$ROOT/runtime/spex-plus/ClearerVoice-Studio"
+export MODELSCOPE_CACHE="$ROOT/runtime/model-cache"
+export CRYSTAL_VOICE_SR_LOCK="$ROOT/runtime/mossformer2-sr-assets.lock.json"
+export CRYSTAL_VOICE_SR_PROVENANCE="$ROOT/runtime/mossformer2-sr-provenance.json"
+"$VENV/bin/crystal-voice" ui --adapter spexplus-sr --port "$PORT" >"$LOG" 2>&1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null || true' EXIT INT TERM
 echo "Loading the direct 8 kHz SpEx+ architecture and verifying its released checkpoint…"

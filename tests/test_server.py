@@ -22,6 +22,7 @@ def test_one_uploaded_take_is_raw_and_processed_source():
     payload = __import__("json").loads(response.read())
     assert response.status == 200
     assert payload["same_take_verified"] is True
-    assert payload["raw_source_sha256"] == payload["processed_source_sha256"]
+    assert payload["raw_source_sha256"] == payload["isolation_source_sha256"] == payload["processed_source_sha256"]
+    connection.request("GET", "/audio/isolation.wav")
+    assert connection.getresponse().status == 200
     server.shutdown(); server.server_close()
-

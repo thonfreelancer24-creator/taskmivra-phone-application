@@ -10,11 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import importlib.util
-import inspect
 import math
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from typing import Any
 
 from crystal_voice.adapters.base import Extraction, TargetSpeakerExtractor
@@ -29,6 +29,12 @@ class SpExProfile:
 
 
 def _plain_samples(value: Any) -> tuple[float, ...]:
+    if isinstance(value, dict):
+        for key in ("MossFormer2_SR_48K", "waveform", "output", "audio", "wav"):
+            if key in value:
+                return _plain_samples(value[key])
+        if len(value) == 1:
+            return _plain_samples(next(iter(value.values())))
     if hasattr(value, "detach"):
         value = value.detach().cpu()
     if hasattr(value, "squeeze"):
@@ -45,30 +51,13 @@ def _plain_samples(value: Any) -> tuple[float, ...]:
     return samples
 
 
-def _network_class(module: Any) -> type:
-    for name in ("SpEx_Plus", "SpEx_plus", "SpExPlus"):
-        candidate = getattr(module, name, None)
-        if inspect.isclass(candidate):
-            return candidate
-    raise RuntimeError("Upstream SpEx_plus.py does not expose a recognized SpEx+ network class")
-
-
-def _network_configuration(config: dict, network: type) -> dict:
-    sections = [config.get(key) for key in ("net_conf", "network_conf", "model_conf", "network", "model")]
-    sections.append(config)
-    signature = inspect.signature(network.__init__)
-    required = {
-        name for name, parameter in signature.parameters.items()
-        if name != "self" and parameter.default is inspect.Parameter.empty
-        and parameter.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-    }
-    for section in sections:
-        if not isinstance(section, dict):
-            continue
-        values = {name: section[name] for name in signature.parameters if name != "self" and name in section}
-        if required <= values.keys():
-            return values
-    raise RuntimeError(f"Released config does not provide SpEx+ constructor fields: {sorted(required)}")
+def _namespace(value: Any) -> Any:
+    """Recursively preserve the released YAML's nested attribute contract."""
+    if isinstance(value, dict):
+        return SimpleNamespace(**{key: _namespace(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return [_namespace(item) for item in value]
+    return value
 
 
 def _find_config_value(config: Any, key: str) -> Any:
@@ -94,11 +83,15 @@ class ClearerVoiceSpExPlusAdapter(TargetSpeakerExtractor):
             "CRYSTAL_VOICE_SPEX_ARCHITECTURE",
             root / "ClearerVoice-Studio/train/target_speaker_extraction/models/SpEx_plus/SpEx_plus.py",
         ))
+        networks_path = Path(os.environ.get(
+            "CRYSTAL_VOICE_SPEX_NETWORKS",
+            root / "ClearerVoice-Studio/train/target_speaker_extraction/networks.py",
+        ))
         config_path = Path(os.environ.get(
             "CRYSTAL_VOICE_SPEX_CONFIG", root / "config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"
         ))
         checkpoint_path = Path(os.environ.get("CRYSTAL_VOICE_SPEX_CHECKPOINT", root / "last_best_checkpoint.pt"))
-        for path in (architecture, config_path, checkpoint_path):
+        for path in (architecture, networks_path, config_path, checkpoint_path):
             if not path.is_file():
                 raise RuntimeError(f"Required direct SpEx+ asset is missing: {path}; run scripts/install_macos.sh")
 
@@ -114,14 +107,18 @@ class ClearerVoiceSpExPlusAdapter(TargetSpeakerExtractor):
                 if str(import_root) not in sys.path:
                     sys.path.insert(0, str(import_root))
         spec = importlib.util.spec_from_file_location(
-            "train.target_speaker_extraction.models.SpEx_plus.SpEx_plus", architecture
+            "train.target_speaker_extraction.networks", networks_path
         )
         if spec is None or spec.loader is None:
-            raise RuntimeError(f"Cannot import SpEx+ architecture from {architecture}")
+            raise RuntimeError(f"Cannot import upstream network_wrapper from {networks_path}")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        network = _network_class(module)
-        model = network(**_network_configuration(config, network))
+        network_wrapper = getattr(module, "network_wrapper", None)
+        if network_wrapper is None:
+            raise RuntimeError("Upstream networks.py does not expose network_wrapper")
+        args = _namespace(config)
+        args.device = torch.device("cpu")
+        model = network_wrapper(args)
         checkpoint = torch.load(str(checkpoint_path), map_location="cpu")
         if not isinstance(checkpoint, dict) or "model" not in checkpoint:
             raise RuntimeError("Released checkpoint must be a mapping containing checkpoint['model']")
@@ -133,7 +130,7 @@ class ClearerVoiceSpExPlusAdapter(TargetSpeakerExtractor):
         model.load_state_dict(state, strict=True)
         model.eval()
         self._torch, self._model, self._config = torch, model, config
-        self.provenance_path = verify_spex_assets(architecture, config_path, checkpoint_path)
+        self.provenance_path = verify_spex_assets(architecture, networks_path, config_path, checkpoint_path)
 
     def enroll(self, reference: Audio) -> SpExProfile:
         if not 3.0 <= reference.duration <= 5.0:
@@ -146,9 +143,15 @@ class ClearerVoiceSpExPlusAdapter(TargetSpeakerExtractor):
         converted = resample(mixture, self.sample_rate)
         mix = self._torch.tensor(converted.samples, dtype=self._torch.float32).unsqueeze(0)
         reference = self._torch.tensor(profile.samples_8k, dtype=self._torch.float32).unsqueeze(0)
+        aux_len = self._torch.tensor([len(profile.samples_8k)], dtype=self._torch.long)
+        speakers = self._torch.tensor([-1], dtype=self._torch.long)
         with self._torch.inference_mode():
-            output = self._model(mix, reference)
-        candidates = output if isinstance(output, (tuple, list)) else (output,)
+            output = self._model(mix, (reference, aux_len, speakers))
+        if isinstance(output, dict):
+            preferred = [output[key] for key in ("waveform", "estimated", "output", "speech") if key in output]
+            candidates = preferred or list(output.values())
+        else:
+            candidates = output if isinstance(output, (tuple, list)) else (output,)
         waveform = None
         for candidate in candidates:
             if hasattr(candidate, "numel") and candidate.numel() >= len(converted.samples) * 0.9:

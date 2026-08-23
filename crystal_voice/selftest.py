@@ -8,7 +8,7 @@ import math
 import os
 from pathlib import Path
 
-from crystal_voice.adapters.clearervoice import ClearerVoiceSpExPlusAdapter
+from crystal_voice.adapters.base import TargetSpeakerExtractor
 from crystal_voice.audio import Audio, apply_headroom, clipped_samples, peak_dbfs
 
 
@@ -21,7 +21,7 @@ def _known_voice(rate: int, seconds: float, frequency: float) -> Audio:
     return Audio(samples, rate)
 
 
-def run_startup_self_test(adapter: ClearerVoiceSpExPlusAdapter) -> dict:
+def run_startup_self_test(adapter: TargetSpeakerExtractor) -> dict:
     reference = _known_voice(48_000, 4.0, 143)
     target = _known_voice(48_000, 1.25, 143)
     other = _known_voice(48_000, 1.25, 217)
@@ -38,7 +38,8 @@ def run_startup_self_test(adapter: ClearerVoiceSpExPlusAdapter) -> dict:
         "duration_ratio": duration_ratio,
         "peak_dbfs": peak_dbfs(safe),
         "safety_attenuation_db": attenuation,
-        "asset_provenance": str(adapter.provenance_path),
+        "asset_provenance": str(getattr(adapter, "provenance_path", getattr(getattr(adapter, "extractor", None), "provenance_path", "missing"))),
+        "restoration_asset_provenance": str(getattr(adapter, "sr_provenance_path", "not-applicable")),
     }
     destination = Path(os.environ.get("CRYSTAL_VOICE_SELFTEST_REPORT", "runtime/startup-self-test.json"))
     destination.parent.mkdir(parents=True, exist_ok=True)

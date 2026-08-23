@@ -1,7 +1,7 @@
 import json
 import subprocess
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 from crystal_voice.adapters.clearervoice import ClearerVoiceSpExPlusAdapter
 from crystal_voice.audio import Audio
@@ -28,10 +28,23 @@ def test_direct_spex_loads_checkpoint_model_and_8k_config(monkeypatch, tmp_path)
     architecture.parent.mkdir(parents=True)
     architecture.write_text("""
 class SpEx_Plus:
-    def __init__(self, N): self.N = N
+    def __init__(self, args): self.args = args
+""")
+    networks = checkout / "train/target_speaker_extraction/networks.py"
+    networks.write_text("""
+class Wrapper:
+    def __init__(self, args):
+        assert args.network_audio.backbone == 'SpEx_plus'
+        assert args.network_audio.L == 20
+        assert str(args.device) == 'cpu'
     def load_state_dict(self, state, strict): assert state == {'weight': 1} and strict
     def eval(self): return self
-    def __call__(self, mixture, reference): return mixture, object()
+    def __call__(self, mixture, enrollment):
+        reference, aux_len, speakers = enrollment
+        assert aux_len.values == [len(reference.values)]
+        assert speakers.values == [-1]
+        return {'waveform': mixture}
+def network_wrapper(args): return Wrapper(args)
 """)
     (checkout / "LICENSE").write_text("Apache-2.0 test fixture")
     subprocess.run(["git", "init", "-q", str(checkout)], check=True)
@@ -40,15 +53,17 @@ class SpEx_Plus:
     subprocess.run(["git", "-C", str(checkout), "add", "."], check=True)
     subprocess.run(["git", "-C", str(checkout), "commit", "-qm", "fixture"], check=True)
     root = tmp_path / "spex-plus"; root.mkdir()
-    config = root / "config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"; config.write_text("audio_sr: 8000\nref_sr: 8000\nnet_conf:\n  N: 256\n")
+    config = root / "config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"; config.write_text("audio_sr: 8000\nref_sr: 8000\nnetwork_audio:\n  backbone: SpEx_plus\n  L: 20\n")
     checkpoint = root / "last_best_checkpoint.pt"; checkpoint.write_bytes(b"released checkpoint fixture")
-    yaml = ModuleType("yaml"); yaml.safe_load = lambda _: {"audio_sr": 8000, "ref_sr": 8000, "net_conf": {"N": 256}}
+    yaml = ModuleType("yaml"); yaml.safe_load = lambda _: {"audio_sr": 8000, "ref_sr": 8000, "network_audio": {"backbone": "SpEx_plus", "L": 20}}
     torch = ModuleType("torch")
-    torch.float32 = object(); torch.load = lambda *_, **__: {"model": {"weight": 1}}
+    torch.float32 = object(); torch.long = object(); torch.device = lambda value: value
+    torch.load = lambda *_, **__: {"model": {"weight": 1}}
     torch.tensor = lambda values, dtype: FakeTensor(values); torch.inference_mode = InferenceMode
     monkeypatch.setitem(sys.modules, "yaml", yaml); monkeypatch.setitem(sys.modules, "torch", torch)
     monkeypatch.setenv("CRYSTAL_VOICE_SPEX_HOME", str(root))
     monkeypatch.setenv("CRYSTAL_VOICE_SPEX_ARCHITECTURE", str(architecture))
+    monkeypatch.setenv("CRYSTAL_VOICE_SPEX_NETWORKS", str(networks))
     monkeypatch.setenv("CRYSTAL_VOICE_CHECKPOINT_LOCK", str(tmp_path / "assets.lock.json"))
     monkeypatch.setenv("CRYSTAL_VOICE_PROVENANCE", str(tmp_path / "provenance.json"))
     adapter = ClearerVoiceSpExPlusAdapter(); adapter.load()
@@ -60,14 +75,12 @@ class SpEx_Plus:
     assert result.metadata["model_sample_rate"] == 8_000
     assert result.metadata["conditioned_by_reference"] is True
     report = json.loads((tmp_path / "provenance.json").read_text())
-    assert {item["role"] for item in report["assets"]} == {"architecture", "configuration", "checkpoint"}
+    assert {item["role"] for item in report["assets"]} == {"architecture", "network_wrapper", "configuration", "checkpoint"}
     assert all(len(item["sha256"]) == 64 for item in report["assets"])
 
 
-def test_rejects_wrong_released_sample_rate(monkeypatch, tmp_path):
-    # The exact 8 kHz assertion is covered through adapter load rather than
-    # permitting the old invented 16 kHz setting.
-    from crystal_voice.adapters.clearervoice import _network_configuration
-    class Network:
-        def __init__(self, N): pass
-    assert _network_configuration({"net_conf": {"N": 1}}, Network) == {"N": 1}
+def test_yaml_namespace_preserves_nested_wrapper_contract():
+    from crystal_voice.adapters.clearervoice import _namespace
+    args = _namespace({"network_audio": {"backbone": "SpEx_plus", "L": 20}})
+    assert args.network_audio.backbone == "SpEx_plus"
+    assert args.network_audio.L == 20

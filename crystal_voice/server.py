@@ -10,10 +10,11 @@ import tempfile
 import time
 
 from crystal_voice import __version__
-from crystal_voice.adapters.base import TargetSpeakerExtractor
+from crystal_voice.adapters.base import Extraction, TargetSpeakerExtractor
 from crystal_voice.audio import apply_headroom, decode_wav, encode_wav, fingerprint, peak_dbfs, clipped_samples
 from crystal_voice.adapters.clearervoice import ClearerVoiceSpExPlusAdapter
 from crystal_voice.selftest import run_startup_self_test
+from crystal_voice.adapters.restoration import SpExPlusMossFormerSRAdapter
 
 
 class Session:
@@ -53,7 +54,7 @@ def handler_factory(session: Session):
                 content_type = "text/javascript; charset=utf-8"
             elif self.path == "/api/status":
                 return self._json(200, {"ready": True, "version": __version__, "model": session.adapter.name, "model_version": session.adapter.version, "profile_ready": session.profile is not None})
-            elif self.path in {"/audio/raw.wav", "/audio/processed.wav"}:
+            elif self.path in {"/audio/raw.wav", "/audio/isolation.wav", "/audio/processed.wav"}:
                 path = session.files / self.path.rsplit("/", 1)[1]
                 if not path.exists():
                     return self.send_error(404)
@@ -82,7 +83,15 @@ def handler_factory(session: Session):
                     # Persist raw before decoding/extraction: playback is the exact uploaded take.
                     (session.files / "raw.wav").write_bytes(body)
                     started = time.perf_counter()
-                    result = session.adapter.extract(audio, session.profile)
+                    if isinstance(session.adapter, SpExPlusMossFormerSRAdapter):
+                        isolation = session.adapter.extractor.extract(audio, session.profile)
+                        isolated_safe, isolation_attenuation = apply_headroom(isolation.audio)
+                        (session.files / "isolation.wav").write_bytes(encode_wav(isolated_safe))
+                        result = session.adapter.restore(Extraction(isolated_safe, isolation.metadata))
+                    else:
+                        result = session.adapter.extract(audio, session.profile)
+                        isolated_safe, isolation_attenuation = apply_headroom(result.audio)
+                        (session.files / "isolation.wav").write_bytes(encode_wav(isolated_safe))
                     safe, attenuation = apply_headroom(result.audio)
                     processed = encode_wav(safe)
                     (session.files / "processed.wav").write_bytes(processed)
@@ -90,12 +99,15 @@ def handler_factory(session: Session):
                     return self._json(200, {
                         "capture_id": capture_id,
                         "raw_source_sha256": capture_id,
+                        "isolation_source_sha256": capture_id,
                         "processed_source_sha256": capture_id,
                         "same_take_verified": True,
                         "raw_peak_dbfs": peak_dbfs(audio),
                         "processed_peak_dbfs": peak_dbfs(safe),
+                        "isolation_peak_dbfs": peak_dbfs(isolated_safe),
                         "clipped_samples": clipped_samples(safe),
                         "attenuation_db": attenuation,
+                        "isolation_attenuation_db": isolation_attenuation,
                         "processing_seconds": elapsed,
                         "real_time_factor": elapsed / audio.duration,
                         "model": session.adapter.name,
@@ -114,6 +126,8 @@ def handler_factory(session: Session):
 def serve(adapter: TargetSpeakerExtractor, host: str = "127.0.0.1", port: int = 8765) -> None:
     adapter.load()  # Fail visibly before reporting the server as ready.
     if isinstance(adapter, ClearerVoiceSpExPlusAdapter):
+        run_startup_self_test(adapter)
+    elif isinstance(adapter, SpExPlusMossFormerSRAdapter):
         run_startup_self_test(adapter)
     server = ThreadingHTTPServer((host, port), handler_factory(Session(adapter)))
     print(f"Crystal Voice {__version__} ready with {adapter.name} at http://{host}:{port}")
