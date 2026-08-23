@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-"$ROOT/scripts/install_macos.sh"
+bash "$ROOT/scripts/install_macos.sh"
 VENV="$ROOT/runtime/venv-macos-x86_64-py312"
 export CRYSTAL_VOICE_SPEX_HOME="$ROOT/runtime/spex-plus"
 export CRYSTAL_VOICE_PROVENANCE="$ROOT/runtime/provenance.json"
