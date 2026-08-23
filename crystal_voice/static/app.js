@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 let activeCapture = null;
 let profileObjectUrl = null;
+let profileReady = false;
 
 function microphoneError(error) {
   const name = error?.name || '';
@@ -10,10 +11,21 @@ function microphoneError(error) {
   return error?.message || 'Unable to start microphone recording.';
 }
 
+function clearChallengeResults() {
+  $('results').hidden = true;
+  for (const id of ['raw', 'isolation', 'processed']) {
+    const player = $(id);
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+  }
+  $('metrics').innerHTML = '';
+}
+
 async function wavRecording(owner, startButton, stopButton, seconds, status) {
   if (activeCapture) throw new Error('Another recording is already active. Stop it first.');
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-    throw new Error('Open Crystal Voice at http://127.0.0.1:8765 in Chrome or Safari. Microphone recording may not work inside an embedded preview.');
+    throw new Error('Open Crystal Voice at http://127.0.0.1 in Chrome or Safari. Microphone recording may not work inside an embedded preview.');
   }
 
   let stream;
@@ -119,22 +131,35 @@ $('enroll').onclick = async () => {
     $('profilePlayback').hidden = false;
     $('enrollStatus').textContent = 'Saving target voice profile…';
     const json = await send('/api/enroll',wav);
+    profileReady = true;
     $('enrollStatus').textContent = `Profile ready · ${json.duration_seconds.toFixed(2)}s · SHA-256 ${json.sha256.slice(0,12)}…`;
     $('challenge').disabled = false;
+    $('challenge').textContent = 'Record challenge';
     $('enroll').textContent = 'Re-record profile';
+    clearChallengeResults();
   } catch (error) {
     $('enrollStatus').textContent = error.message;
   }
 };
 
 $('challenge').onclick = async () => {
+  if (!profileReady) {
+    $('challengeStatus').textContent = 'Record a Target Voice Profile first.';
+    $('challenge').disabled = true;
+    return;
+  }
+
+  clearChallengeResults();
   try {
     const wav = await wavRecording('challenge',$('challenge'),$('challengeStop'),8,$('challengeStatus'));
     if (!wav) return;
-    $('challengeStatus').textContent = 'Extracting and restoring target speaker…';
+
+    $('challenge').disabled = true;
+    $('challengeStatus').textContent = 'Extracting, cleaning, and restoring target speaker…';
     const json = await send('/api/process',wav);
+
     $('challenge').textContent = 'Record another challenge';
-    $('challengeStatus').textContent = json.same_take_verified ? 'All three source fingerprints verified' : 'VERIFICATION FAILED';
+    $('challengeStatus').textContent = json.same_take_verified ? 'Ready for another challenge · all three source fingerprints verified' : 'VERIFICATION FAILED';
     $('results').hidden = false;
     const stamp = Date.now();
     $('raw').src = '/audio/raw.wav?' + stamp;
@@ -144,11 +169,28 @@ $('challenge').onclick = async () => {
     $('results').scrollIntoView({behavior:'smooth',block:'start'});
   } catch (error) {
     $('challengeStatus').textContent = error.message;
+  } finally {
+    $('challenge').disabled = !profileReady;
   }
 };
 
-fetch('/api/status').then(response=>response.json()).then(json=>{
-  $('ready').textContent=json.ready?'MODEL READY':'NOT READY';
-  $('version').textContent=json.version;
-  $('ready').title=json.model+' '+json.model_version;
-}).catch(()=>{$('ready').textContent='STARTUP ERROR';});
+async function refreshStatus() {
+  try {
+    const response = await fetch('/api/status',{cache:'no-store'});
+    const json = await response.json();
+    $('ready').textContent = json.ready ? 'MODEL READY' : 'NOT READY';
+    $('version').textContent = json.version;
+    $('ready').title = json.model + ' ' + json.model_version;
+    profileReady = Boolean(json.profile_ready);
+    $('challenge').disabled = !profileReady;
+    if (profileReady) {
+      $('enroll').textContent = 'Re-record profile';
+      $('enrollStatus').textContent = 'Target Voice Profile is still ready in this session.';
+      $('challenge').textContent = 'Record challenge';
+    }
+  } catch (_) {
+    $('ready').textContent = 'STARTUP ERROR';
+  }
+}
+
+refreshStatus();
