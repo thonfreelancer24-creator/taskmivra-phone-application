@@ -48,9 +48,6 @@ def handler_factory(session: Session):
             return self.rfile.read(size)
 
         def do_GET(self):
-            # Browsers may add cache-busting query strings such as
-            # /app.js?v=manual-stop-2 and /audio/raw.wav?12345. Route using the
-            # URL path only so versioned static assets and playback always work.
             request_path = urlsplit(self.path).path
             if request_path == "/":
                 body = (static / "index.html").read_bytes()
@@ -87,10 +84,16 @@ def handler_factory(session: Session):
                     if session.profile is None:
                         raise ValueError("Record a 3–5 second Target Voice Profile first")
                     capture_id = fingerprint(body)
-                    # Persist raw before decoding/extraction: playback is the exact uploaded take.
                     (session.files / "raw.wav").write_bytes(body)
                     started = time.perf_counter()
-                    if isinstance(session.adapter, SpExPlusMossFormerSRAdapter):
+
+                    if getattr(session.adapter, "two_stage_pipeline", False):
+                        extracted = session.adapter.extract(audio, session.profile)
+                        isolation = session.adapter.review_isolation(extracted)
+                        isolated_safe, isolation_attenuation = apply_headroom(isolation.audio)
+                        (session.files / "isolation.wav").write_bytes(encode_wav(isolated_safe))
+                        result = session.adapter.restore(Extraction(isolated_safe, isolation.metadata))
+                    elif isinstance(session.adapter, SpExPlusMossFormerSRAdapter):
                         isolation = session.adapter.extractor.extract(audio, session.profile)
                         isolated_safe, isolation_attenuation = apply_headroom(isolation.audio)
                         (session.files / "isolation.wav").write_bytes(encode_wav(isolated_safe))
@@ -99,6 +102,7 @@ def handler_factory(session: Session):
                         result = session.adapter.extract(audio, session.profile)
                         isolated_safe, isolation_attenuation = apply_headroom(result.audio)
                         (session.files / "isolation.wav").write_bytes(encode_wav(isolated_safe))
+
                     safe, attenuation = apply_headroom(result.audio)
                     processed = encode_wav(safe)
                     (session.files / "processed.wav").write_bytes(processed)
@@ -131,7 +135,7 @@ def handler_factory(session: Session):
 
 
 def serve(adapter: TargetSpeakerExtractor, host: str = "127.0.0.1", port: int = 8765) -> None:
-    adapter.load()  # Fail visibly before reporting the server as ready.
+    adapter.load()
     if isinstance(adapter, ClearerVoiceSpExPlusAdapter):
         run_startup_self_test(adapter)
     elif isinstance(adapter, SpExPlusMossFormerSRAdapter):
