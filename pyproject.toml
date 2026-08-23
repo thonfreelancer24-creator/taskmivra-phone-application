@@ -12,6 +12,15 @@ license = { text = "Proprietary" }
 [project.scripts]
 crystal-voice = "crystal_voice.cli:main"
 
+# Limit package discovery to the application package. The installer creates a
+# runtime/ directory at the repository root, which must never be treated as a
+# Python package during editable installation.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["crystal_voice*"]
+exclude = ["runtime*"]
+namespaces = false
+
 [tool.setuptools.package-data]
 crystal_voice = ["static/*"]
 
