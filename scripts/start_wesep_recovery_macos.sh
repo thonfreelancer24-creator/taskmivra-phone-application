@@ -37,6 +37,12 @@ fi
 git -C "$WESPEAKER_HOME" fetch origin "$WESPEAKER_REVISION"
 git -C "$WESPEAKER_HOME" checkout --detach "$WESPEAKER_REVISION"
 
+# WeSep only needs wespeaker.models.* for its embedded speaker encoder. The
+# upstream wespeaker package initializer imports the diarization CLI, which
+# unnecessarily requires umap/hdbscan. Neutralize that top-level side effect
+# while leaving the model source itself untouched.
+printf '%s\n' '# TaskMivra Crystal Voice recovery: model-only WeSpeaker import surface.' > "$WESPEAKER_HOME/wespeaker/__init__.py"
+
 # Keep the already verified Intel-Mac torch/torchaudio foundation. Install only
 # the runtime pieces required by the released WeSep BSRNN-ECAPA path.
 "$VENV/bin/python" -m pip install \
@@ -45,7 +51,7 @@ git -C "$WESPEAKER_HOME" checkout --detach "$WESPEAKER_REVISION"
 "$VENV/bin/python" -m pip install --no-deps -e "$WESEP_HOME"
 "$VENV/bin/python" -m pip install -e "$ROOT"
 
-# Fail here with a focused dependency message rather than later in the server.
+# Fail here with a focused model-load message rather than later in the server.
 "$VENV/bin/python" - <<'PY'
 from wespeaker.models.speaker_model import get_speaker_model
 import wesep
@@ -54,7 +60,7 @@ model = wesep.load_model("english")
 model.set_device("cpu")
 model.set_vad(False)
 model.set_output_norm(False)
-print("WeSep English BSRNN-ECAPA model ready with WeSpeaker.")
+print("WeSep English BSRNN-ECAPA model ready with model-only WeSpeaker.")
 PY
 
 "$VENV/bin/crystal-voice" ui --adapter wesep-native --port "$PORT" >"$LOG" 2>&1 &
