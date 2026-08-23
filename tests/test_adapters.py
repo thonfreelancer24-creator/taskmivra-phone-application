@@ -1,7 +1,7 @@
 import pytest
 
 from crystal_voice.adapters.diagnostic import SameTakeDiagnosticAdapter
-from crystal_voice.adapters.external import ClearerVoiceSpExPlusAdapter
+from crystal_voice.adapters.external import WeSepAdapter
 from crystal_voice.audio import Audio
 
 
@@ -17,7 +17,6 @@ def test_profile_duration_is_enforced():
 
 
 def test_external_command_requires_all_conditioning_paths(monkeypatch):
-    monkeypatch.setenv("CRYSTAL_VOICE_SPEX_COMMAND", "infer {mixture} {output}")
+    monkeypatch.setenv("CRYSTAL_VOICE_WESEP_COMMAND", "infer {mixture} {output}")
     with pytest.raises(RuntimeError, match="reference"):
-        ClearerVoiceSpExPlusAdapter().load()
-
+        WeSepAdapter().load()

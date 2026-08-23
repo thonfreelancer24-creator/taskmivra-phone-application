@@ -1,0 +1,5 @@
+# Binary-wheel-compatible foundation validated by prior Intel macOS experiments.
+numpy==1.26.4
+torch==2.2.2
+torchaudio==2.2.2
+

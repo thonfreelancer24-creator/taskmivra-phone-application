@@ -58,16 +58,8 @@ class ExternalReferenceAdapter(TargetSpeakerExtractor):
         return Extraction(output, {"conditioned_by_reference": True, "command_env": self.command_environment})
 
 
-class ClearerVoiceSpExPlusAdapter(ExternalReferenceAdapter):
-    name = "ClearerVoice-Studio SpEx+"
-    version = "upstream-checkout-required"
-    sample_rate = 16_000
-    command_environment = "CRYSTAL_VOICE_SPEX_COMMAND"
-
-
 class WeSepAdapter(ExternalReferenceAdapter):
     name = "WeSep reference-conditioned TSE"
     version = "upstream-checkout-required"
     sample_rate = 16_000
     command_environment = "CRYSTAL_VOICE_WESEP_COMMAND"
-
