@@ -80,7 +80,7 @@ def verify_sr_assets(checkpoint_dir: Path) -> Path:
         for role, path in required
     ]
     identity = [{key: item[key] for key in ("role", "bytes", "sha256")} for item in assets]
-    lock = Path(os.environ.get("CRYSTAL_VOICE_SR_LOCK", "runtime/mossformer2-sr-assets.lock.json"))
+    lock = Path(os.environ.get("CRYSTAL_VOICE_SR_LOCK", "runtime/mossformer2-sr-inference-assets.lock.json"))
     lock.parent.mkdir(parents=True, exist_ok=True)
     verified = lock.exists()
     if verified and json.loads(lock.read_text()) != identity:
@@ -93,6 +93,7 @@ def verify_sr_assets(checkpoint_dir: Path) -> Path:
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "model": "MossFormer2_SR_48K",
         "model_repository": "alibabasglab/MossFormer2_SR_48K",
+        "model_revision": "0453849",
         "assets": assets,
         "lock": str(lock.resolve()),
         "verified_against_existing_lock": verified,

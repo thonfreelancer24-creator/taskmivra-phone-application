@@ -12,7 +12,7 @@ LOG="$ROOT/runtime/crystal-voice.log"
 
 export CRYSTAL_VOICE_SR_HOME="$ROOT/runtime/spex-plus/ClearerVoice-Studio"
 export CRYSTAL_VOICE_SR_CHECKPOINT_DIR="$ROOT/runtime/checkpoints/MossFormer2_SR_48K"
-export CRYSTAL_VOICE_SR_LOCK="$ROOT/runtime/mossformer2-sr-assets.lock.json"
+export CRYSTAL_VOICE_SR_LOCK="$ROOT/runtime/mossformer2-sr-inference-assets.lock.json"
 export CRYSTAL_VOICE_SR_PROVENANCE="$ROOT/runtime/mossformer2-sr-provenance.json"
 "$VENV/bin/crystal-voice" ui --adapter spexplus-sr --port "$PORT" >"$LOG" 2>&1 &
 PID=$!

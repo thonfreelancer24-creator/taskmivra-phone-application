@@ -11,7 +11,7 @@ SOURCE_REVISION="6b3774dc79c46ae8bed2a4fa5f706f0ac8c75c61"
 CONFIG_NAME="config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"
 SR_CHECKPOINT_DIR="$RUNTIME/checkpoints/MossFormer2_SR_48K"
 SR_REPO="alibabasglab/MossFormer2_SR_48K"
-SR_REVISION="main"
+SR_REVISION="0453849"
 
 [[ "$(uname -s)" == Darwin ]] || { echo "ERROR: this installer is for macOS." >&2; exit 2; }
 [[ "$(uname -m)" == x86_64 ]] || { echo "ERROR: expected Intel macOS x86_64, got $(uname -m)." >&2; exit 2; }
@@ -46,7 +46,7 @@ if [[ ! -s "$SPEX_HOME/$CONFIG_NAME" || ! -s "$SPEX_HOME/last_best_checkpoint.pt
   "$VENV/bin/python" "$ROOT/scripts/download_released_models.py" --destination "$SPEX_HOME"
 fi
 
-# Fetch only inference assets required by ClearVoice; do not download training discriminator weights.
+# Fetch only the original inference release assets required by ClearVoice.
 if [[ ! -s "$SR_CHECKPOINT_DIR/last_best_checkpoint" || ! -s "$SR_CHECKPOINT_DIR/last_best_checkpoint_m.pt" || ! -s "$SR_CHECKPOINT_DIR/last_best_checkpoint_g.pt" ]]; then
   "$VENV/bin/python" - <<PY
 from huggingface_hub import hf_hub_download
@@ -68,7 +68,7 @@ export CRYSTAL_VOICE_PROVENANCE="$RUNTIME/provenance.json"
 export CRYSTAL_VOICE_SELFTEST_REPORT="$RUNTIME/startup-self-test.json"
 export CRYSTAL_VOICE_SR_HOME="$SOURCE"
 export CRYSTAL_VOICE_SR_CHECKPOINT_DIR="$SR_CHECKPOINT_DIR"
-export CRYSTAL_VOICE_SR_LOCK="$RUNTIME/mossformer2-sr-assets.lock.json"
+export CRYSTAL_VOICE_SR_LOCK="$RUNTIME/mossformer2-sr-inference-assets.lock.json"
 export CRYSTAL_VOICE_SR_PROVENANCE="$RUNTIME/mossformer2-sr-provenance.json"
 "$VENV/bin/python" - <<'PY'
 from crystal_voice.adapters.restoration import SpExPlusMossFormerSRAdapter
