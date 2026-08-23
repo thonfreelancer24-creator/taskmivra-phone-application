@@ -42,8 +42,14 @@ class NativeWeSepAdapter(TargetSpeakerExtractor):
         self._extractor = extractor
 
     def enroll(self, reference: Audio) -> WeSepProfile:
-        if not 3.0 <= reference.duration <= 5.0:
-            raise ValueError("Target Voice Profile must be 3-5 seconds")
+        if reference.duration < 3.0:
+            raise ValueError("Target Voice Profile must be at least 3 seconds")
+        # Browser audio arrives in blocks, so a nominal 5.0-second capture can
+        # contain a small tail beyond 5 seconds. Use exactly the first 5 seconds
+        # rather than rejecting an otherwise valid target-voice profile.
+        max_samples = int(reference.sample_rate * 5.0)
+        if len(reference.samples) > max_samples:
+            reference = Audio(reference.samples[:max_samples], reference.sample_rate)
         return WeSepProfile(reference)
 
     def extract(self, mixture: Audio, profile: object) -> Extraction:
