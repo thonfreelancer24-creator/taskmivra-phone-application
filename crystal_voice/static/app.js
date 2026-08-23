@@ -69,15 +69,23 @@ async function wavRecording(owner, startButton, stopButton, seconds, status) {
       startButton.disabled = false;
       stopButton.hidden = true;
 
-      const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
-      if (!length) {
+      const capturedLength = chunks.reduce((total, chunk) => total + chunk.length, 0);
+      if (!capturedLength) {
         status.textContent = 'No audio samples were captured. Check the browser microphone permission and selected input device.';
         resolveRecording(null);
         return;
       }
-      const pcm = new Float32Array(length);
+      const maximumLength = Math.max(1, Math.floor(rate * seconds));
+      const outputLength = Math.min(capturedLength, maximumLength);
+      const pcm = new Float32Array(outputLength);
       let offset = 0;
-      for (const chunk of chunks) { pcm.set(chunk, offset); offset += chunk.length; }
+      for (const chunk of chunks) {
+        if (offset >= outputLength) break;
+        const remaining = outputLength - offset;
+        const part = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
+        pcm.set(part, offset);
+        offset += part.length;
+      }
       resolveRecording(encodeWav(pcm, rate));
     };
 
