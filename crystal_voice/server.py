@@ -12,6 +12,8 @@ import time
 from crystal_voice import __version__
 from crystal_voice.adapters.base import TargetSpeakerExtractor
 from crystal_voice.audio import apply_headroom, decode_wav, encode_wav, fingerprint, peak_dbfs, clipped_samples
+from crystal_voice.adapters.clearervoice import ClearerVoiceSpExPlusAdapter
+from crystal_voice.selftest import run_startup_self_test
 
 
 class Session:
@@ -111,6 +113,8 @@ def handler_factory(session: Session):
 
 def serve(adapter: TargetSpeakerExtractor, host: str = "127.0.0.1", port: int = 8765) -> None:
     adapter.load()  # Fail visibly before reporting the server as ready.
+    if isinstance(adapter, ClearerVoiceSpExPlusAdapter):
+        run_startup_self_test(adapter)
     server = ThreadingHTTPServer((host, port), handler_factory(Session(adapter)))
     print(f"Crystal Voice {__version__} ready with {adapter.name} at http://{host}:{port}")
     server.serve_forever()

@@ -80,3 +80,26 @@ def run_benchmark(adapter: TargetSpeakerExtractor, output_directory: Path) -> di
     )
     return report
 
+
+def compare_restoration(plain: TargetSpeakerExtractor, restored: TargetSpeakerExtractor, output_directory: Path) -> dict:
+    plain_report = run_benchmark(plain, output_directory / "spexplus-alone")
+    restored_report = run_benchmark(restored, output_directory / "spexplus-mossformer2-sr")
+    comparisons = []
+    for baseline, candidate in zip(plain_report["cases"], restored_report["cases"]):
+        base_metrics, candidate_metrics = baseline.get("metrics", {}), candidate.get("metrics", {})
+        identity_delta = candidate_metrics.get("target_waveform_correlation", -1) - base_metrics.get("target_waveform_correlation", -1)
+        accepted = bool(
+            candidate["status"] == "completed"
+            and candidate_metrics.get("passes_machine_artifact_gate")
+            and candidate_metrics.get("clipped_samples") == 0
+            and 0.995 <= candidate_metrics.get("duration_ratio", 0) <= 1.005
+            and identity_delta >= -0.02
+        )
+        comparisons.append({"regime": baseline["regime"], "restoration_accepted": accepted, "identity_correlation_delta": identity_delta})
+    report = {
+        "accepted": all(item["restoration_accepted"] for item in comparisons),
+        "human_artifact_listening_required": ["artificial", "metallic", "distorted", "identity change"],
+        "comparisons": comparisons,
+    }
+    (output_directory / "restoration-comparison.json").write_text(json.dumps(report, indent=2))
+    return report

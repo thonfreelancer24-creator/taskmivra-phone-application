@@ -18,11 +18,14 @@ def _voice(duration: float, rate: int, fundamental: float, seed: int) -> Audio:
         jitter = 1 + 0.008 * rng.uniform(-1, 1)
         phase += 2 * math.pi * fundamental * jitter / rate
         sample = syllables * (0.24 * math.sin(phase) + 0.09 * math.sin(2 * phase) + 0.04 * math.sin(4 * phase))
+        # Low-level consonant-like detail makes the 3–8 kHz retention metric
+        # meaningful when comparing narrow-band extraction and 48 kHz SR.
+        sample += syllables * 0.012 * math.sin(2 * math.pi * 5_500 * time)
         samples.append(sample)
     return Audio(tuple(samples), rate)
 
 
-def synthetic_case(regime: str, duration: float = 1.5, rate: int = 16_000) -> tuple[Audio, Audio, Audio]:
+def synthetic_case(regime: str, duration: float = 1.5, rate: int = 48_000) -> tuple[Audio, Audio, Audio]:
     target = _voice(duration, rate, 137, 10)
     interferer = _voice(duration, rate, 211, 20)
     snr = {"speech_10db": 10, "speech_5db": 5, "speech_0db": 0, "speech_-5db": -5}.get(regime, 5)
@@ -40,4 +43,3 @@ def synthetic_case(regime: str, duration: float = 1.5, rate: int = 16_000) -> tu
 
 
 REGIMES = ("speech_10db", "speech_5db", "speech_0db", "speech_-5db", "music", "music_noise")
-

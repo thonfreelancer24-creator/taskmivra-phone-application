@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from crystal_voice.adapters import ADAPTERS
-from crystal_voice.benchmark import run_benchmark
+from crystal_voice.benchmark import compare_restoration, run_benchmark
 from crystal_voice.server import serve
 
 
@@ -19,16 +19,22 @@ def main(argv: list[str] | None = None) -> int:
     ui.add_argument("--adapter", choices=ADAPTERS, required=True)
     ui.add_argument("--host", default="127.0.0.1")
     ui.add_argument("--port", type=int, default=8765)
+    compare = sub.add_parser("compare-restoration", help="compare 8 kHz SpEx+ alone against MossFormer2 48 kHz SR")
+    compare.add_argument("--output", type=Path, default=Path("artifacts/restoration"))
     args = parser.parse_args(argv)
-    adapter = ADAPTERS[args.adapter]()
     if args.action == "benchmark":
+        adapter = ADAPTERS[args.adapter]()
         report = run_benchmark(adapter, args.output)
         print(json.dumps({"accepted": report["accepted"], "report": str(args.output / "report.html")}, indent=2))
         return 0 if report["accepted"] else 2
+    if args.action == "compare-restoration":
+        report = compare_restoration(ADAPTERS["spexplus"](), ADAPTERS["spexplus-sr"](), args.output)
+        print(json.dumps(report, indent=2))
+        return 0 if report["accepted"] else 2
+    adapter = ADAPTERS[args.adapter]()
     serve(adapter, args.host, args.port)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

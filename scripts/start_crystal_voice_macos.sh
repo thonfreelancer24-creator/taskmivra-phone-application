@@ -3,18 +3,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 "$ROOT/scripts/install_macos.sh"
 VENV="$ROOT/runtime/venv-macos-x86_64-py312"
-export CRYSTAL_VOICE_CLEARERVOICE_HOME="$ROOT/runtime/ClearerVoice-Studio"
+export CRYSTAL_VOICE_SPEX_HOME="$ROOT/runtime/spex-plus"
 export CRYSTAL_VOICE_PROVENANCE="$ROOT/runtime/provenance.json"
-export CRYSTAL_VOICE_CHECKPOINT_LOCK="$ROOT/runtime/checkpoint-assets.lock.json"
-export MODELSCOPE_CACHE="$ROOT/runtime/model-cache"
-export TORCH_HOME="$ROOT/runtime/torch-cache"
+export CRYSTAL_VOICE_CHECKPOINT_LOCK="$ROOT/runtime/spex-assets.lock.json"
+export CRYSTAL_VOICE_SELFTEST_REPORT="$ROOT/runtime/startup-self-test.json"
 PORT="${CRYSTAL_VOICE_PORT:-8765}"
 LOG="$ROOT/runtime/crystal-voice.log"
 
 "$VENV/bin/crystal-voice" ui --adapter spexplus --port "$PORT" >"$LOG" 2>&1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null || true' EXIT INT TERM
-echo "Loading SpEx+ and verifying checkpoint; this can take several minutes on first run…"
+echo "Loading the direct 8 kHz SpEx+ architecture and verifying its released checkpoint…"
 for _ in $(seq 1 600); do
   if ! kill -0 "$PID" 2>/dev/null; then
     echo "ERROR: Crystal Voice failed to start:" >&2

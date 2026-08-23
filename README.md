@@ -44,12 +44,12 @@ On Intel macOS, the complete real-model path is one command:
 ./scripts/start_crystal_voice_macos.sh
 ```
 
-It checks the host and Python version, creates a clean model-specific environment, acquires and locks the ClearerVoice source commit, installs pinned binary-friendly foundations, loads/downloads SpEx+, hashes source/license/checkpoint assets, waits for model readiness, and only then opens the browser. Subsequent runs verify and reuse the locked commit. Runtime records are written under ignored `runtime/`.
+It checks the host and Python version, creates a clean model-specific environment, acquires and locks the direct SpEx+ architecture plus released WSJ0-2mix YAML/checkpoint, verifies their SHA-256 values, confirms the exact 8 kHz configuration, strictly loads `checkpoint["model"]`, runs real inference in a startup self-test, waits for readiness, and only then opens the browser. It does not install the ClearVoice training dependency stack.
 
 For plumbing inspection, `--adapter diagnostic` works but displays that its output is not reference-conditioned. The browser records PCM/WAV with browser audio enhancement disabled, uploads one challenge WAV once, and the server persists those exact bytes as Raw before processing. Both source IDs shown in results are the upload's SHA-256.
 
 ## Acceptance state and limitations
 
-**No candidate is accepted by the cloud run yet.** The real persistent SpEx+ path is implemented, but this cloud's outbound tunnel prevented acquisition/execution of the upstream source and checkpoint. The Intel launcher solves acquisition on the target machine and writes exact runtime hashes. Mandatory music, TV, competing-speaker, fan/AC, keyboard, mixed-challenge listening and independent speaker-embedding/STOI/PESQ measurement must be run there. See `docs/QUALITY_GATES.md` for the distinction between machine rejection and human acceptance.
+**No candidate is accepted by the cloud run yet.** Direct released SpEx+ is intentionally an 8 kHz isolation benchmark, not the final quality path. The optional `spexplus-sr` candidate applies released `MossFormer2_SR_48K` and can be compared with `crystal-voice compare-restoration`; it must be rejected if objective identity/artifact gates or human listening regress. The cloud tunnel still prevented real asset acquisition, so mandatory target-machine scenarios remain.
 
 Do not begin streaming/WebRTC work until a reviewed, licensed model passes both synthetic pre-gates and every mandatory real listening scenario.
