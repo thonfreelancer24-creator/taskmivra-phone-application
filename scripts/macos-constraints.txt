@@ -5,3 +5,6 @@ torchaudio==2.2.2
 torchvision==0.17.2
 PyYAML==6.0.2
 huggingface_hub==0.27.1
+# Pin Intel-macOS/Python-3.12 wheels so librosa does not trigger local LLVM builds.
+numba==0.61.0
+llvmlite==0.44.0
