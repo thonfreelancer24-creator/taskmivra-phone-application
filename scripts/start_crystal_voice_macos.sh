@@ -11,13 +11,13 @@ PORT="${CRYSTAL_VOICE_PORT:-8765}"
 LOG="$ROOT/runtime/crystal-voice.log"
 
 export CRYSTAL_VOICE_SR_HOME="$ROOT/runtime/spex-plus/ClearerVoice-Studio"
-export MODELSCOPE_CACHE="$ROOT/runtime/model-cache"
+export CRYSTAL_VOICE_SR_CHECKPOINT_DIR="$ROOT/runtime/checkpoints/MossFormer2_SR_48K"
 export CRYSTAL_VOICE_SR_LOCK="$ROOT/runtime/mossformer2-sr-assets.lock.json"
 export CRYSTAL_VOICE_SR_PROVENANCE="$ROOT/runtime/mossformer2-sr-provenance.json"
 "$VENV/bin/crystal-voice" ui --adapter spexplus-sr --port "$PORT" >"$LOG" 2>&1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null || true' EXIT INT TERM
-echo "Loading the direct 8 kHz SpEx+ architecture and verifying its released checkpoint…"
+echo "Loading the direct 8 kHz SpEx+ architecture and verified 48 kHz restoration assets..."
 for _ in $(seq 1 600); do
   if ! kill -0 "$PID" 2>/dev/null; then
     echo "ERROR: Crystal Voice failed to start:" >&2

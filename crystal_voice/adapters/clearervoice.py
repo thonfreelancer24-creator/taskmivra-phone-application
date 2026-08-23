@@ -102,10 +102,13 @@ class ClearerVoiceSpExPlusAdapter(TargetSpeakerExtractor):
         if audio_sr != 8_000 or ref_sr != 8_000:
             raise RuntimeError(f"Released SpEx+ config must declare audio_sr/ref_sr 8000, got {audio_sr}/{ref_sr}")
 
-        for import_root in (architecture.parent, *architecture.parents):
-            if (import_root / "train").is_dir() or import_root == architecture.parent:
-                if str(import_root) not in sys.path:
-                    sys.path.insert(0, str(import_root))
+        target_speaker_root = networks_path.parent.resolve()
+        models_root = target_speaker_root / "models"
+        if not models_root.is_dir():
+            raise RuntimeError(f"Upstream target-speaker models package is missing: {models_root}")
+        if str(target_speaker_root) not in sys.path:
+            sys.path.insert(0, str(target_speaker_root))
+
         spec = importlib.util.spec_from_file_location(
             "train.target_speaker_extraction.networks", networks_path
         )

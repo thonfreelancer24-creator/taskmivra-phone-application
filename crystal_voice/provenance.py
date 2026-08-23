@@ -1,4 +1,4 @@
-"""Exact source/config/checkpoint verification for direct SpEx+ inference."""
+"""Exact source/config/checkpoint verification for direct model inference."""
 
 from __future__ import annotations
 
@@ -65,21 +65,21 @@ def verify_spex_assets(architecture: Path, networks: Path, config: Path, checkpo
     return destination
 
 
-def verify_sr_assets(source: Path) -> Path:
-    roots = [source]
-    cache = os.environ.get("MODELSCOPE_CACHE")
-    if cache:
-        roots.append(Path(cache))
-    assets = []
-    for root in roots:
-        if not root.exists():
-            continue
-        for path in root.rglob("*"):
-            if path.is_file() and path.suffix.lower() in {".pt", ".pth", ".bin", ".safetensors"}:
-                assets.append({"path": str(path.resolve()), "bytes": path.stat().st_size, "sha256": sha256(path)})
-    if not assets:
-        raise RuntimeError("MossFormer2_SR_48K loaded but no checkpoint asset was discoverable for SHA-256 verification")
-    identity = sorted(({key: item[key] for key in ("bytes", "sha256")} for item in assets), key=lambda item: item["sha256"])
+def verify_sr_assets(checkpoint_dir: Path) -> Path:
+    checkpoint_dir = checkpoint_dir.resolve()
+    required = (
+        ("checkpoint_pointer", checkpoint_dir / "last_best_checkpoint"),
+        ("mossformer_checkpoint", checkpoint_dir / "last_best_checkpoint_m.pt"),
+        ("generator_checkpoint", checkpoint_dir / "last_best_checkpoint_g.pt"),
+    )
+    missing = [str(path) for _, path in required if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"MossFormer2_SR_48K inference assets missing for verification: {missing}")
+    assets = [
+        {"role": role, "path": str(path), "bytes": path.stat().st_size, "sha256": sha256(path)}
+        for role, path in required
+    ]
+    identity = [{key: item[key] for key in ("role", "bytes", "sha256")} for item in assets]
     lock = Path(os.environ.get("CRYSTAL_VOICE_SR_LOCK", "runtime/mossformer2-sr-assets.lock.json"))
     lock.parent.mkdir(parents=True, exist_ok=True)
     verified = lock.exists()
@@ -88,10 +88,14 @@ def verify_sr_assets(source: Path) -> Path:
     if not verified:
         lock.write_text(json.dumps(identity, indent=2))
     report = Path(os.environ.get("CRYSTAL_VOICE_SR_PROVENANCE", "runtime/mossformer2-sr-provenance.json"))
+    report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps({
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "model": "MossFormer2_SR_48K",
+        "model_repository": "alibabasglab/MossFormer2_SR_48K",
         "assets": assets,
+        "lock": str(lock.resolve()),
         "verified_against_existing_lock": verified,
+        "review_required": not verified,
     }, indent=2))
     return report

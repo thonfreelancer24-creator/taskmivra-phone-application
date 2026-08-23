@@ -22,19 +22,21 @@ class InferenceMode:
     def __exit__(self, *_): return False
 
 
-def test_direct_spex_loads_checkpoint_model_and_8k_config(monkeypatch, tmp_path):
+def test_direct_spex_loads_upstream_models_import_and_real_wrapper_contract(monkeypatch, tmp_path):
     checkout = tmp_path / "ClearerVoice-Studio"
     architecture = checkout / "train/target_speaker_extraction/models/SpEx_plus/SpEx_plus.py"
     architecture.parent.mkdir(parents=True)
     architecture.write_text("""
-class SpEx_Plus:
+class SpEx_plus:
     def __init__(self, args): self.args = args
 """)
     networks = checkout / "train/target_speaker_extraction/networks.py"
     networks.write_text("""
-class Wrapper:
+from models.SpEx_plus.SpEx_plus import SpEx_plus
+class Wrapper(SpEx_plus):
     def __init__(self, args):
-        assert args.network_audio.backbone == 'SpEx_plus'
+        super().__init__(args)
+        assert args.network_audio.backbone == 'SpEx-plus'
         assert args.network_audio.L == 20
         assert str(args.device) == 'cpu'
     def load_state_dict(self, state, strict): assert state == {'weight': 1} and strict
@@ -53,9 +55,9 @@ def network_wrapper(args): return Wrapper(args)
     subprocess.run(["git", "-C", str(checkout), "add", "."], check=True)
     subprocess.run(["git", "-C", str(checkout), "commit", "-qm", "fixture"], check=True)
     root = tmp_path / "spex-plus"; root.mkdir()
-    config = root / "config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"; config.write_text("audio_sr: 8000\nref_sr: 8000\nnetwork_audio:\n  backbone: SpEx_plus\n  L: 20\n")
+    config = root / "config_wsj0-2mix_speech_SpEx-plus_2spk.yaml"; config.write_text("audio_sr: 8000\nref_sr: 8000\nnetwork_audio:\n  backbone: SpEx-plus\n  L: 20\n")
     checkpoint = root / "last_best_checkpoint.pt"; checkpoint.write_bytes(b"released checkpoint fixture")
-    yaml = ModuleType("yaml"); yaml.safe_load = lambda _: {"audio_sr": 8000, "ref_sr": 8000, "network_audio": {"backbone": "SpEx_plus", "L": 20}}
+    yaml = ModuleType("yaml"); yaml.safe_load = lambda _: {"audio_sr": 8000, "ref_sr": 8000, "network_audio": {"backbone": "SpEx-plus", "L": 20}}
     torch = ModuleType("torch")
     torch.float32 = object(); torch.long = object(); torch.device = lambda value: value
     torch.load = lambda *_, **__: {"model": {"weight": 1}}
@@ -67,6 +69,7 @@ def network_wrapper(args): return Wrapper(args)
     monkeypatch.setenv("CRYSTAL_VOICE_CHECKPOINT_LOCK", str(tmp_path / "assets.lock.json"))
     monkeypatch.setenv("CRYSTAL_VOICE_PROVENANCE", str(tmp_path / "provenance.json"))
     adapter = ClearerVoiceSpExPlusAdapter(); adapter.load()
+    assert str(checkout / "train/target_speaker_extraction") in sys.path
     assert adapter.eligible_for_acceptance is False
     reference = Audio((0.02,) * (4 * 48_000), 48_000)
     mixture = Audio((0.03,) * 48_000, 48_000)
@@ -81,6 +84,6 @@ def network_wrapper(args): return Wrapper(args)
 
 def test_yaml_namespace_preserves_nested_wrapper_contract():
     from crystal_voice.adapters.clearervoice import _namespace
-    args = _namespace({"network_audio": {"backbone": "SpEx_plus", "L": 20}})
-    assert args.network_audio.backbone == "SpEx_plus"
+    args = _namespace({"network_audio": {"backbone": "SpEx-plus", "L": 20}})
+    assert args.network_audio.backbone == "SpEx-plus"
     assert args.network_audio.L == 20
