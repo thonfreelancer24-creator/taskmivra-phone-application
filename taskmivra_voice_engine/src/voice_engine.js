@@ -1,4 +1,4 @@
-/** TaskMivra Voice Engine v0.2 — owned streaming DSP + profile-conditioned control. */
+/** TaskMivra Voice Engine v0.3 — owned streaming DSP + profile-conditioned control. */
 import {
   TaskMivraVoiceProfile,
   enrollTaskMivraVoiceProfile,
@@ -10,12 +10,12 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 function nextPow2(v){let n=1;while(n<v)n<<=1;return n;}
 function fft(real, imag, inverse=false){const n=real.length;if((n&(n-1))!==0)throw new Error('FFT length must be power of two');for(let i=1,j=0;i<n;i++){let bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){[real[i],real[j]]=[real[j],real[i]];[imag[i],imag[j]]=[imag[j],imag[i]];}}for(let len=2;len<=n;len<<=1){const a=(inverse?2:-2)*Math.PI/len,wr0=Math.cos(a),wi0=Math.sin(a);for(let off=0;off<n;off+=len){let wr=1,wi=0;for(let j=0;j<(len>>1);j++){const e=off+j,o=e+(len>>1),vr=real[o]*wr-imag[o]*wi,vi=real[o]*wi+imag[o]*wr,ur=real[e],ui=imag[e];real[e]=ur+vr;imag[e]=ui+vi;real[o]=ur-vr;imag[o]=ui-vi;const nw=wr*wr0-wi*wi0;wi=wr*wi0+wi*wr0;wr=nw;}}}if(inverse){for(let i=0;i<n;i++){real[i]/=n;imag[i]/=n;}}}
 export class TaskMivraVoiceEngine {
-  constructor(options={}){this.sampleRate=options.sampleRate??48000;if(this.sampleRate!==48000)throw new Error('v0.2 requires 48 kHz mono');this.hopSize=480;this.frameSize=960;this.fftSize=nextPow2(this.frameSize);this.binCount=this.fftSize/2+1;this.enabled=options.enabled??true;this.ceiling=10**((options.ceilingDbfs??-3)/20);this.maxAutoGain=10**((options.maxAutoGainDb??3)/20);this.autoGainEnabled=options.autoGainEnabled??false;this.window=new Float64Array(this.frameSize);for(let i=0;i<this.frameSize;i++)this.window[i]=Math.sin(Math.PI*(i+.5)/this.frameSize);this.history=new Float64Array(this.frameSize);this.ola=new Float64Array(this.frameSize);this.prevGain=new Float64Array(this.binCount);this.prevGain.fill(1);this.noisePsd=new Float64Array(this.binCount);this.smoothPsd=new Float64Array(this.binCount);this.minimumPsd=new Float64Array(this.binCount);this.minimumPsd.fill(Infinity);this.inputFifo=[];this.outputFifo=[];this.inputRead=0;this.outputRead=0;this.hpPrevX=0;this.hpPrevY=0;const rc=1/(2*Math.PI*70),dt=1/this.sampleRate;this.hpAlpha=rc/(rc+dt);this.frameCounter=0;this.noiseInitialized=false;this.gainRecovery=1;this.limiterGain=1;this.failSafeTriggered=false;this.lastError=null;this.lastInputPeak=0;this.lastOutputPeak=0;this.voiceProfile=null;this.targetConfidence=1;this.targetSpeakerGain=1;this.targetPitchHz=0;this.profileStrength=clamp(options.profileStrength??.72,0,1);this.profileFloor=10**((options.profileFloorDb??-12)/20);}
+  constructor(options={}){this.sampleRate=options.sampleRate??48000;if(this.sampleRate!==48000)throw new Error('v0.3 requires 48 kHz mono');this.hopSize=480;this.frameSize=960;this.fftSize=nextPow2(this.frameSize);this.binCount=this.fftSize/2+1;this.enabled=options.enabled??true;this.ceiling=10**((options.ceilingDbfs??-3)/20);this.maxAutoGain=10**((options.maxAutoGainDb??3)/20);this.autoGainEnabled=options.autoGainEnabled??false;this.window=new Float64Array(this.frameSize);for(let i=0;i<this.frameSize;i++)this.window[i]=Math.sin(Math.PI*(i+.5)/this.frameSize);this.history=new Float64Array(this.frameSize);this.ola=new Float64Array(this.frameSize);this.prevGain=new Float64Array(this.binCount);this.prevGain.fill(1);this.noisePsd=new Float64Array(this.binCount);this.smoothPsd=new Float64Array(this.binCount);this.minimumPsd=new Float64Array(this.binCount);this.minimumPsd.fill(Infinity);this.inputFifo=[];this.outputFifo=[];this.inputRead=0;this.outputRead=0;this.hpPrevX=0;this.hpPrevY=0;const rc=1/(2*Math.PI*70),dt=1/this.sampleRate;this.hpAlpha=rc/(rc+dt);this.frameCounter=0;this.noiseInitialized=false;this.gainRecovery=1;this.limiterGain=1;this.failSafeTriggered=false;this.lastError=null;this.lastInputPeak=0;this.lastOutputPeak=0;this.voiceProfile=null;this.targetConfidence=1;this.targetSpeakerGain=1;this.targetPitchHz=0;this.profileStrength=clamp(options.profileStrength??1,0,1);this.profileFloor=10**((options.profileFloorDb??-30)/20);this.profileTargetBoost=10**((options.profileTargetBoostDb??2.6)/20);}
   getLatencySamples(){return this.hopSize;}
   getLatencyMs(){return 1000*this.hopSize/this.sampleRate;}
   setEnabled(v){this.enabled=Boolean(v);}
   enrollVoiceProfile(samples){const profile=enrollTaskMivraVoiceProfile(samples,this.sampleRate);this.setVoiceProfile(profile);return profile;}
-  setVoiceProfile(profile){this.voiceProfile=profile instanceof TaskMivraVoiceProfile?profile:TaskMivraVoiceProfile.fromJSON(profile);this.targetConfidence=1;this.targetSpeakerGain=1;this.targetPitchHz=0;}
+  setVoiceProfile(profile){this.voiceProfile=profile instanceof TaskMivraVoiceProfile?profile:TaskMivraVoiceProfile.fromJSON(profile);this.targetConfidence=.20;this.targetSpeakerGain=this.profileFloor;this.targetPitchHz=0;}
   clearVoiceProfile(){this.voiceProfile=null;this.targetConfidence=1;this.targetSpeakerGain=1;this.targetPitchHz=0;}
   getStatus(){return{ready:true,enabled:this.enabled,sampleRate:this.sampleRate,frameMs:20,hopMs:10,algorithmicLatencyMs:this.getLatencyMs(),processedFrames:this.frameCounter,failSafeTriggered:this.failSafeTriggered,lastError:this.lastError,lastInputPeak:this.lastInputPeak,lastOutputPeak:this.lastOutputPeak,externalVoiceModel:false,voiceProfileReady:Boolean(this.voiceProfile),targetConfidence:this.targetConfidence,targetSpeakerGain:this.targetSpeakerGain,targetPitchHz:this.targetPitchHz};}
   _hp(x){const y=this.hpAlpha*(this.hpPrevY+x-this.hpPrevX);this.hpPrevX=x;this.hpPrevY=y;return y;}
@@ -31,8 +31,8 @@ export class TaskMivraVoiceEngine {
       const rise=speaker.confidence>this.targetConfidence?.42:.90;
       this.targetConfidence=rise*this.targetConfidence+(1-rise)*speaker.confidence;
       this.targetPitchHz=speaker.targetPitchHz||0;
-      const x=clamp((this.targetConfidence-.46)/.34,0,1),smooth=x*x*(3-2*x),desired=this.profileFloor+(1-this.profileFloor)*smooth;
-      const desiredBlended=1-this.profileStrength*(1-desired),gainAlpha=desiredBlended>this.targetSpeakerGain?.45:.94;
+      const x=clamp((this.targetConfidence-.25)/.20,0,1),smooth=x*x*(3-2*x),desired=this.profileFloor+(this.profileTargetBoost-this.profileFloor)*smooth;
+      const desiredBlended=1-this.profileStrength*(1-desired),gainAlpha=desiredBlended>this.targetSpeakerGain?.28:.95;
       this.targetSpeakerGain=gainAlpha*this.targetSpeakerGain+(1-gainAlpha)*desiredBlended;
     }
     const real=new Float64Array(this.fftSize),imag=new Float64Array(this.fftSize);
@@ -50,12 +50,18 @@ export class TaskMivraVoiceEngine {
         const affinity=b>=0?profileBands.affinities[b]:.65;
         const bandMask=.72+.28*affinity;
         let harmonicMask=1;
-        if(speaker&&speaker.targetPitchHz>70&&speaker.targetHarmonicity>.18&&hz>=100&&hz<=5200){
+        if(speaker&&speaker.targetPitchHz>70&&speaker.targetHarmonicity>.18&&hz>=100&&hz<=5200&&this.targetConfidence<.85){
           const f0=speaker.targetPitchHz,h=Math.max(1,Math.round(hz/f0)),distance=Math.abs(hz-h*f0),width=Math.max(42,f0*.20),harmonic=Math.exp(-.5*(distance/width)**2);
-          harmonicMask=.66+.34*harmonic;
+          const depth=this.targetConfidence<.35?0.46:0.34;
+          harmonicMask=(1-depth)+depth*harmonic;
         }
-        const profileMask=this.targetSpeakerGain*(.82+.18*bandMask)*(this.targetConfidence<.76?harmonicMask:1);
-        g*=clamp(profileMask,this.profileFloor,1);
+        const bandIdentity=0.82+0.18*bandMask;
+        const highMask=hz>=5200?(.20+.80*affinity):(hz>=3000?(.38+.62*affinity):1);
+        const identityMask=bandIdentity*harmonicMask*highMask;
+        const profileMask=this.targetSpeakerGain*identityMask;
+        const voiceRecovery=clamp((this.targetConfidence-.35)/.25,0,1);
+        const bodyRecovery=hz>=100&&hz<300?1+voiceRecovery*.45:(hz>=300&&hz<1000?1+voiceRecovery*.12:1);
+        g*=clamp(profileMask*bodyRecovery,this.profileFloor,this.profileTargetBoost*1.25);
       }
       real[k]*=g;imag[k]*=g;if(k>0&&k<this.fftSize/2){const m=this.fftSize-k;real[m]*=g;imag[m]*=g;}
     }
