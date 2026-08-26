@@ -1,9 +1,9 @@
 {
   "name": "taskmivra-voice-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "TaskMivra-owned local streaming microphone processing core",
+  "description": "TaskMivra-controlled local streaming microphone and voice-profile processing core",
   "scripts": {
     "test": "node --test tests/*.test.js"
   },
