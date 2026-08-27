@@ -26,22 +26,35 @@ def spectral_loss(est, target):
     est_spec = torch.stft(est, 1024, 480, 960, window, return_complex=True)
     tgt_spec = torch.stft(target, 1024, 480, 960, window, return_complex=True)
     diff = (torch.log1p(10 * est_spec.abs()) - torch.log1p(10 * tgt_spec.abs())).abs()
-    # Preserve consonant/detail bands more strongly than low-frequency energy.
     freqs = torch.linspace(0, 24000, diff.shape[-2], device=diff.device)
     weights = torch.ones_like(freqs)
     weights[(freqs >= 1000) & (freqs <= 8000)] = 1.6
     return (diff * weights[None, :, None]).mean()
 
 
-def profile_margin_loss(model, mixture, positive_profile, negative_profile, has_negative, margin=0.6):
+def profile_margin_loss(model, mixture, target, positive_profile, negative_profile, has_negative):
     if has_negative.max().item() == 0:
         return mixture.new_tensor(0.0)
+
+    # Output-level requirement: correct profile must reconstruct the target
+    # more accurately than a competing profile.
     pos_est, _ = model(mixture, positive_profile)
     neg_est, _ = model(mixture, negative_profile)
-    pos_energy = pos_est.square().mean(-1).sqrt().clamp_min(1e-6)
-    neg_energy = neg_est.square().mean(-1).sqrt().clamp_min(1e-6)
-    per_item = torch.relu(margin - torch.log(pos_energy / neg_energy))
-    return (per_item * has_negative).sum() / has_negative.sum().clamp_min(1.0)
+    pos_score = si_sdr(pos_est, target)
+    neg_score = si_sdr(neg_est, target)
+    output_margin = torch.relu(1.5 - (pos_score - neg_score))
+
+    # Embedding-level requirement: a target-speech segment must be closer to
+    # its own enrolled profile than to the competing profile.
+    target_emb = model.encode_profile(target)
+    pos_emb = model.encode_profile(positive_profile)
+    neg_emb = model.encode_profile(negative_profile)
+    pos_distance = 1.0 - (target_emb * pos_emb).sum(dim=-1)
+    neg_distance = 1.0 - (target_emb * neg_emb).sum(dim=-1)
+    embedding_margin = torch.relu(0.35 + pos_distance - neg_distance)
+
+    combined = output_margin + embedding_margin
+    return (combined * has_negative).sum() / has_negative.sum().clamp_min(1.0)
 
 
 def main():
@@ -55,7 +68,7 @@ def main():
     ap.add_argument("--segment", type=float, default=2.0)
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--spectral-weight", type=float, default=1.8)
-    ap.add_argument("--profile-weight", type=float, default=0.35)
+    ap.add_argument("--profile-weight", type=float, default=0.45)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -88,7 +101,9 @@ def main():
 
             estimate, mask = model(mixture, profile)
             score = si_sdr(estimate, target)
-            p_loss = profile_margin_loss(model, mixture, profile, negative_profile, has_negative)
+            p_loss = profile_margin_loss(
+                model, mixture, target, profile, negative_profile, has_negative
+            )
             loss = (
                 -score.mean()
                 + args.spectral_weight * spectral_loss(estimate, target)
@@ -110,7 +125,7 @@ def main():
             "si_sdr": total_si_sdr / batches,
             "profile_margin_loss": total_profile / batches,
             "seconds": time.time() - started,
-            "architecture": "TaskMivraTargetSpeakerNet-v1-v0.4-curriculum",
+            "architecture": "TaskMivraTargetSpeakerNet-v0.4",
             "pretrained_weights": False,
             "resume_source": str(args.resume) if args.resume else None,
         }
