@@ -44,7 +44,7 @@ def mix_at_snr(target, other, snr_db):
 
 
 class TaskMivraRightsGatedDataset(Dataset):
-    """Supports either precomputed same-take mixtures or on-the-fly cleared interference."""
+    """Training rows may include an explicit negative profile for speaker-contrast learning."""
 
     def __init__(self, manifest_path, segment_seconds=2.0, profile_seconds=3.5, seed=1337):
         self.rows = load_manifest(manifest_path)
@@ -62,8 +62,6 @@ class TaskMivraRightsGatedDataset(Dataset):
 
         target_full = read_pcm16_mono(row["target_clean"])
 
-        # Precomputed paired mixtures are used for profile-contrast examples so
-        # both target labels can reference the exact same mixture waveform.
         if row.get("mixture"):
             mixture_full = read_pcm16_mono(row["mixture"])
             aligned_n = min(len(mixture_full), len(target_full))
@@ -78,12 +76,26 @@ class TaskMivraRightsGatedDataset(Dataset):
             mixture = target.clone()
             if row.get("interference"):
                 other = crop_or_tile(read_pcm16_mono(row["interference"]), self.seg_n, rng)
-                mixture = mix_at_snr(mixture, other, rng.uniform(-3, 8))
+                mixture = mix_at_snr(mixture, other, rng.uniform(-5, 6))
             if row.get("noise"):
                 noise = crop_or_tile(read_pcm16_mono(row["noise"]), self.seg_n, rng)
-                mixture = mix_at_snr(mixture, noise, rng.uniform(0, 15))
+                mixture = mix_at_snr(mixture, noise, rng.uniform(-2, 12))
             peak = mixture.abs().max().clamp_min(1.0)
             mixture = mixture / peak
 
         profile = crop_or_tile(read_pcm16_mono(row["profile_clean"]), self.prof_n, rng)
-        return {"mixture": mixture, "target": target, "profile": profile}
+        negative_path = row.get("negative_profile_clean")
+        if negative_path:
+            negative_profile = crop_or_tile(read_pcm16_mono(negative_path), self.prof_n, rng)
+            has_negative = torch.tensor(1.0, dtype=torch.float32)
+        else:
+            negative_profile = profile.clone()
+            has_negative = torch.tensor(0.0, dtype=torch.float32)
+
+        return {
+            "mixture": mixture,
+            "target": target,
+            "profile": profile,
+            "negative_profile": negative_profile,
+            "has_negative": has_negative,
+        }
