@@ -10,7 +10,7 @@ ALLOWED_RIGHTS = {
     "explicit-commercial-training-license",
     "recorded-with-explicit-training-consent",
 }
-AUDIO_FIELDS = ("target_clean", "profile_clean", "interference", "noise")
+AUDIO_FIELDS = ("mixture", "target_clean", "profile_clean", "interference", "noise")
 
 
 def load_manifest(path: str | Path):
