@@ -25,7 +25,23 @@ def spectral_loss(est, target):
     window = torch.hann_window(960, device=est.device, dtype=est.dtype)
     est_spec = torch.stft(est, 1024, 480, 960, window, return_complex=True)
     tgt_spec = torch.stft(target, 1024, 480, 960, window, return_complex=True)
-    return (torch.log1p(10 * est_spec.abs()) - torch.log1p(10 * tgt_spec.abs())).abs().mean()
+    diff = (torch.log1p(10 * est_spec.abs()) - torch.log1p(10 * tgt_spec.abs())).abs()
+    # Preserve consonant/detail bands more strongly than low-frequency energy.
+    freqs = torch.linspace(0, 24000, diff.shape[-2], device=diff.device)
+    weights = torch.ones_like(freqs)
+    weights[(freqs >= 1000) & (freqs <= 8000)] = 1.6
+    return (diff * weights[None, :, None]).mean()
+
+
+def profile_margin_loss(model, mixture, positive_profile, negative_profile, has_negative, margin=0.6):
+    if has_negative.max().item() == 0:
+        return mixture.new_tensor(0.0)
+    pos_est, _ = model(mixture, positive_profile)
+    neg_est, _ = model(mixture, negative_profile)
+    pos_energy = pos_est.square().mean(-1).sqrt().clamp_min(1e-6)
+    neg_energy = neg_est.square().mean(-1).sqrt().clamp_min(1e-6)
+    per_item = torch.relu(margin - torch.log(pos_energy / neg_energy))
+    return (per_item * has_negative).sum() / has_negative.sum().clamp_min(1.0)
 
 
 def main():
@@ -37,8 +53,9 @@ def main():
     ap.add_argument("--resume", default=None, help="Optional TaskMivra checkpoint to continue from")
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--segment", type=float, default=2.0)
-    ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--spectral-weight", type=float, default=1.5)
+    ap.add_argument("--lr", type=float, default=2e-4)
+    ap.add_argument("--spectral-weight", type=float, default=1.8)
+    ap.add_argument("--profile-weight", type=float, default=0.35)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -59,17 +76,23 @@ def main():
         model.train()
         total_loss = 0.0
         total_si_sdr = 0.0
+        total_profile = 0.0
         started = time.time()
 
         for batch in loader:
             mixture = batch["mixture"].to(args.device)
             target = batch["target"].to(args.device)
             profile = batch["profile"].to(args.device)
+            negative_profile = batch["negative_profile"].to(args.device)
+            has_negative = batch["has_negative"].to(args.device)
+
             estimate, mask = model(mixture, profile)
             score = si_sdr(estimate, target)
+            p_loss = profile_margin_loss(model, mixture, profile, negative_profile, has_negative)
             loss = (
                 -score.mean()
                 + args.spectral_weight * spectral_loss(estimate, target)
+                + args.profile_weight * p_loss
                 + 0.003 * (mask[:, :, 1:] - mask[:, :, :-1]).abs().mean()
             )
             optimizer.zero_grad(set_to_none=True)
@@ -78,14 +101,16 @@ def main():
             optimizer.step()
             total_loss += float(loss.detach())
             total_si_sdr += float(score.mean().detach())
+            total_profile += float(p_loss.detach())
 
         batches = max(1, len(loader))
         meta = {
             "epoch": epoch,
             "loss": total_loss / batches,
             "si_sdr": total_si_sdr / batches,
+            "profile_margin_loss": total_profile / batches,
             "seconds": time.time() - started,
-            "architecture": "TaskMivraTargetSpeakerNet-v1",
+            "architecture": "TaskMivraTargetSpeakerNet-v1-v0.4-curriculum",
             "pretrained_weights": False,
             "resume_source": str(args.resume) if args.resume else None,
         }
