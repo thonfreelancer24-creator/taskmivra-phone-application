@@ -1,0 +1,62 @@
+name: TaskMivra Voice v0.5 Real-Speaker TV Repair
+
+on:
+  push:
+    branches:
+      - build/taskmivra-owned-voice-engine-v0.1
+    paths:
+      - '.github/workflows/taskmivra-voice-v05.yml'
+      - 'taskmivra_voice_engine/ml/prepare_v05_real_speakers.py'
+      - 'taskmivra_voice_engine/ml/train.py'
+      - 'taskmivra_voice_engine/ml/model.py'
+      - 'taskmivra_voice_engine/ml/dataset.py'
+      - 'taskmivra_voice_engine/ml/rights.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  train-v05:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install 'numpy<2' torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build real-speaker public-domain corpus
+        run: python taskmivra_voice_engine/ml/prepare_v05_real_speakers.py
+
+      - name: Validate rights manifest
+        working-directory: taskmivra_voice_engine/ml
+        run: python -c "from rights import load_manifest; rows=load_manifest('v05_data/train_manifest.jsonl'); print('RIGHTS_GATE_PASS rows=',len(rows))"
+
+      - name: Train TaskMivra-owned v0.5 weights
+        working-directory: taskmivra_voice_engine/ml
+        run: python train.py v05_data/train_manifest.jsonl --out v05_out --epochs 6 --batch 8 --segment 1.5 --lr 0.0002 --spectral-weight 1.8 --profile-weight 0.55 --device cpu
+
+      - name: Create training bundle
+        run: |
+          mkdir -p taskmivra_voice_engine/ml/v05_bundle
+          cp taskmivra_voice_engine/ml/v05_out/*.pt taskmivra_voice_engine/ml/v05_bundle/
+          cp taskmivra_voice_engine/ml/v05_data/provenance.json taskmivra_voice_engine/ml/v05_bundle/
+          cp taskmivra_voice_engine/ml/v05_data/train_manifest.jsonl taskmivra_voice_engine/ml/v05_bundle/
+          cp taskmivra_voice_engine/ml/v05_data/heldout/*.wav taskmivra_voice_engine/ml/v05_bundle/
+          cp taskmivra_voice_engine/ml/model.py taskmivra_voice_engine/ml/v05_bundle/
+          cp taskmivra_voice_engine/ml/train.py taskmivra_voice_engine/ml/v05_bundle/
+
+      - name: Upload v0.5 checkpoints
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-voice-v05-real-speaker-checkpoints
+          path: taskmivra_voice_engine/ml/v05_bundle
+          retention-days: 14
