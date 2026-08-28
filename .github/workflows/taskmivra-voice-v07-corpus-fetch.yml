@@ -26,10 +26,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p corpus/raw corpus/wav16
-          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/LibriVox_-_The_Case_of_Lady_Sannox.ogg' -o corpus/raw/betsie_bush.ogg
-          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/LibriVox_-_The_Red_Room_by_H._G._Wells.ogg' -o corpus/raw/william_coon.ogg
-          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/LibriVox_-_A_Modest_Proposal.ogg' -o corpus/raw/john_gonzales.ogg
-          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Yellow_wallpaper_gilman_lr.ogg' -o corpus/raw/lola_rogers.ogg
+          fetch() { curl -L --fail --retry 3 "https://commons.wikimedia.org/wiki/Special:Redirect/file/$1" -o "corpus/raw/$2.ogg"; }
+          fetch 'LibriVox_-_The_Case_of_Lady_Sannox.ogg' betsie_bush
+          fetch 'Morella_poe_mt.ogg' lady_maria
+          fetch 'Sleeping_beauty_in_the_wood_perrault_rjs.ogg' rebecca_snyder
+          fetch 'LibriVox_-_Constitution_of_the_United_States_of_America_01.ogg' kristen_mcquillin
+          fetch 'Ransom_red_chief_henry_ce.ogg' catharine_eastman
+          fetch 'Yellow_wallpaper_gilman_lr.ogg' lola_rogers
+          fetch 'LibriVox_-_The_Red_Room_by_H._G._Wells.ogg' william_coon
+          fetch 'Shortstory026_goodmatch_jc.ogg' james_christopher
+          fetch 'LibriVox_-_A_Modest_Proposal.ogg' john_gonzales
+          fetch 'Gs006_hauntedhouse_woolf_dgf.ogg' david_federman
+          fetch 'Gs006_redroom_wells_v.ogg' virgil
+          fetch 'LibriVox_-_Peter_and_Wendy_17.ogg' john_garvin
 
       - name: Make compact 16 kHz training clips
         shell: bash
@@ -49,31 +58,25 @@ jobs:
             "purpose": "TaskMivra Voice v0.7 rights-clean speaker diversity training",
             "retrieved_utc": "2026-08-28",
             "production_training_rights": "public-domain",
-            "sources": [
-              {
-                "speaker": "Betsie Bush",
-                "title": "The Case of Lady Sannox",
-                "source_page": "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Case_of_Lady_Sannox.ogg",
-                "license_evidence": "Wikimedia Commons page states all LibriVox recordings are public domain and unrestricted commercial use/modification is permitted."
-              },
-              {
-                "speaker": "William Coon",
-                "title": "The Red Room",
-                "source_page": "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Red_Room_by_H._G._Wells.ogg",
-                "license_evidence": "Wikimedia Commons page states all LibriVox recordings are public domain and unrestricted commercial use/modification is permitted."
-              },
-              {
-                "speaker": "John Gonzales",
-                "title": "A Modest Proposal",
-                "source_page": "https://commons.wikimedia.org/wiki/File:LibriVox_-_A_Modest_Proposal.ogg",
-                "license_evidence": "Wikimedia Commons page identifies the LibriVox recording as public domain."
-              },
-              {
-                "speaker": "Lola Rogers",
-                "title": "The Yellow Wallpaper",
-                "source_page": "https://commons.wikimedia.org/wiki/File:Yellow_wallpaper_gilman_lr.ogg",
-                "license_evidence": "Wikimedia Commons page states all LibriVox recordings are public domain and unrestricted commercial use/modification is permitted."
-              }
+            "policy": "Only LibriVox recordings hosted by Wikimedia Commons and represented as public-domain are included. Preserve source-page evidence before production release.",
+            "speakers": [
+              "Betsie Bush", "Lady Maria", "Rebecca Snyder", "Kristen McQuillin",
+              "Catharine Eastman", "Lola Rogers", "William Coon", "James Christopher",
+              "John Gonzales", "David Federman", "Virgil", "John Garvin"
+            ],
+            "source_pages": [
+              "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Case_of_Lady_Sannox.ogg",
+              "https://commons.wikimedia.org/wiki/File:Morella_poe_mt.ogg",
+              "https://commons.wikimedia.org/wiki/File:Sleeping_beauty_in_the_wood_perrault_rjs.ogg",
+              "https://commons.wikimedia.org/wiki/File:LibriVox_-_Constitution_of_the_United_States_of_America_01.ogg",
+              "https://commons.wikimedia.org/wiki/File:Ransom_red_chief_henry_ce.ogg",
+              "https://commons.wikimedia.org/wiki/File:Yellow_wallpaper_gilman_lr.ogg",
+              "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Red_Room_by_H._G._Wells.ogg",
+              "https://commons.wikimedia.org/wiki/File:Shortstory026_goodmatch_jc.ogg",
+              "https://commons.wikimedia.org/wiki/File:LibriVox_-_A_Modest_Proposal.ogg",
+              "https://commons.wikimedia.org/wiki/File:Gs006_hauntedhouse_woolf_dgf.ogg",
+              "https://commons.wikimedia.org/wiki/File:Gs006_redroom_wells_v.ogg",
+              "https://commons.wikimedia.org/wiki/File:LibriVox_-_Peter_and_Wendy_17.ogg"
             ]
           }
           JSON
@@ -81,7 +84,7 @@ jobs:
       - name: Upload compact corpus
         uses: actions/upload-artifact@v4
         with:
-          name: taskmivra-v07-public-domain-speakers
+          name: taskmivra-v07-public-domain-speakers-12
           path: |
             corpus/wav16/*.wav
             corpus/PROVENANCE.json
