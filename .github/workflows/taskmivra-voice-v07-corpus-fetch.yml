@@ -1,0 +1,89 @@
+name: TaskMivra Voice v0.7 Corpus Fetch
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-v07-corpus-fetch.yml'
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-public-domain-speakers:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TaskMivra Voice v0.7 corpus fetch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install audio tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg curl
+
+      - name: Fetch public-domain LibriVox recordings
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p corpus/raw corpus/wav16
+          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/LibriVox_-_The_Case_of_Lady_Sannox.ogg' -o corpus/raw/betsie_bush.ogg
+          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/LibriVox_-_The_Red_Room_by_H._G._Wells.ogg' -o corpus/raw/william_coon.ogg
+          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/LibriVox_-_A_Modest_Proposal.ogg' -o corpus/raw/john_gonzales.ogg
+          curl -L --fail --retry 3 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Yellow_wallpaper_gilman_lr.ogg' -o corpus/raw/lola_rogers.ogg
+
+      - name: Make compact 16 kHz training clips
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in corpus/raw/*.ogg; do
+            n="$(basename "$f" .ogg)"
+            ffmpeg -hide_banner -loglevel error -y -ss 90 -t 90 -i "$f" -ac 1 -ar 16000 -c:a pcm_s16le "corpus/wav16/${n}.wav"
+          done
+          sha256sum corpus/raw/* corpus/wav16/* > corpus/SHA256SUMS.txt
+
+      - name: Write provenance
+        shell: bash
+        run: |
+          cat > corpus/PROVENANCE.json <<'JSON'
+          {
+            "purpose": "TaskMivra Voice v0.7 rights-clean speaker diversity training",
+            "retrieved_utc": "2026-08-28",
+            "production_training_rights": "public-domain",
+            "sources": [
+              {
+                "speaker": "Betsie Bush",
+                "title": "The Case of Lady Sannox",
+                "source_page": "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Case_of_Lady_Sannox.ogg",
+                "license_evidence": "Wikimedia Commons page states all LibriVox recordings are public domain and unrestricted commercial use/modification is permitted."
+              },
+              {
+                "speaker": "William Coon",
+                "title": "The Red Room",
+                "source_page": "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Red_Room_by_H._G._Wells.ogg",
+                "license_evidence": "Wikimedia Commons page states all LibriVox recordings are public domain and unrestricted commercial use/modification is permitted."
+              },
+              {
+                "speaker": "John Gonzales",
+                "title": "A Modest Proposal",
+                "source_page": "https://commons.wikimedia.org/wiki/File:LibriVox_-_A_Modest_Proposal.ogg",
+                "license_evidence": "Wikimedia Commons page identifies the LibriVox recording as public domain."
+              },
+              {
+                "speaker": "Lola Rogers",
+                "title": "The Yellow Wallpaper",
+                "source_page": "https://commons.wikimedia.org/wiki/File:Yellow_wallpaper_gilman_lr.ogg",
+                "license_evidence": "Wikimedia Commons page states all LibriVox recordings are public domain and unrestricted commercial use/modification is permitted."
+              }
+            ]
+          }
+          JSON
+
+      - name: Upload compact corpus
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-v07-public-domain-speakers
+          path: |
+            corpus/wav16/*.wav
+            corpus/PROVENANCE.json
+            corpus/SHA256SUMS.txt
+          retention-days: 7
