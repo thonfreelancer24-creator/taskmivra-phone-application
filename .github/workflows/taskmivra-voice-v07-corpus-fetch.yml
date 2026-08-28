@@ -21,34 +21,31 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg curl
 
-      - name: Fetch public-domain LibriVox recordings
+      - name: Stream compact public-domain LibriVox clips
         shell: bash
         run: |
-          set -euo pipefail
-          mkdir -p corpus/raw corpus/wav16
-          fetch() { curl -L --fail --retry 3 "https://commons.wikimedia.org/wiki/Special:Redirect/file/$1" -o "corpus/raw/$2.ogg"; }
-          fetch 'LibriVox_-_The_Case_of_Lady_Sannox.ogg' betsie_bush
-          fetch 'Morella_poe_mt.ogg' lady_maria
-          fetch 'Sleeping_beauty_in_the_wood_perrault_rjs.ogg' rebecca_snyder
-          fetch 'LibriVox_-_Constitution_of_the_United_States_of_America_01.ogg' kristen_mcquillin
-          fetch 'Ransom_red_chief_henry_ce.ogg' catharine_eastman
-          fetch 'Yellow_wallpaper_gilman_lr.ogg' lola_rogers
-          fetch 'LibriVox_-_The_Red_Room_by_H._G._Wells.ogg' william_coon
-          fetch 'Shortstory026_goodmatch_jc.ogg' james_christopher
-          fetch 'LibriVox_-_A_Modest_Proposal.ogg' john_gonzales
-          fetch 'Gs006_hauntedhouse_woolf_dgf.ogg' david_federman
-          fetch 'Gs006_redroom_wells_v.ogg' virgil
-          fetch 'LibriVox_-_Peter_and_Wendy_17.ogg' john_garvin
-
-      - name: Make compact 16 kHz training clips
-        shell: bash
-        run: |
-          set -euo pipefail
-          for f in corpus/raw/*.ogg; do
-            n="$(basename "$f" .ogg)"
-            ffmpeg -hide_banner -loglevel error -y -ss 90 -t 90 -i "$f" -ac 1 -ar 16000 -c:a pcm_s16le "corpus/wav16/${n}.wav"
-          done
-          sha256sum corpus/raw/* corpus/wav16/* > corpus/SHA256SUMS.txt
+          set -eu
+          mkdir -p corpus/wav16
+          fetch_clip() {
+            src="$1"; out="$2"
+            url="https://commons.wikimedia.org/wiki/Special:Redirect/file/${src}"
+            curl -L --fail --retry 2 --max-time 120 "$url" 2>/dev/null | \
+              ffmpeg -hide_banner -loglevel error -y -i pipe:0 -t 60 -ac 1 -ar 16000 -c:a pcm_s16le "corpus/wav16/${out}.wav"
+            test -s "corpus/wav16/${out}.wav"
+          }
+          fetch_clip 'LibriVox_-_The_Case_of_Lady_Sannox.ogg' betsie_bush
+          fetch_clip 'Morella_poe_mt.ogg' lady_maria
+          fetch_clip 'Sleeping_beauty_in_the_wood_perrault_rjs.ogg' rebecca_snyder
+          fetch_clip 'LibriVox_-_Constitution_of_the_United_States_of_America_01.ogg' kristen_mcquillin
+          fetch_clip 'Ransom_red_chief_henry_ce.ogg' catharine_eastman
+          fetch_clip 'Yellow_wallpaper_gilman_lr.ogg' lola_rogers
+          fetch_clip 'LibriVox_-_The_Red_Room_by_H._G._Wells.ogg' william_coon
+          fetch_clip 'Shortstory026_goodmatch_jc.ogg' james_christopher
+          fetch_clip 'LibriVox_-_A_Modest_Proposal.ogg' john_gonzales
+          fetch_clip 'Gs006_hauntedhouse_woolf_dgf.ogg' david_federman
+          fetch_clip 'Gs006_redroom_wells_v.ogg' virgil
+          fetch_clip 'LibriVox_-_Peter_and_Wendy_17.ogg' john_garvin
+          sha256sum corpus/wav16/* > corpus/SHA256SUMS.txt
 
       - name: Write provenance
         shell: bash
@@ -59,11 +56,7 @@ jobs:
             "retrieved_utc": "2026-08-28",
             "production_training_rights": "public-domain",
             "policy": "Only LibriVox recordings hosted by Wikimedia Commons and represented as public-domain are included. Preserve source-page evidence before production release.",
-            "speakers": [
-              "Betsie Bush", "Lady Maria", "Rebecca Snyder", "Kristen McQuillin",
-              "Catharine Eastman", "Lola Rogers", "William Coon", "James Christopher",
-              "John Gonzales", "David Federman", "Virgil", "John Garvin"
-            ],
+            "speakers": ["Betsie Bush","Lady Maria","Rebecca Snyder","Kristen McQuillin","Catharine Eastman","Lola Rogers","William Coon","James Christopher","John Gonzales","David Federman","Virgil","John Garvin"],
             "source_pages": [
               "https://commons.wikimedia.org/wiki/File:LibriVox_-_The_Case_of_Lady_Sannox.ogg",
               "https://commons.wikimedia.org/wiki/File:Morella_poe_mt.ogg",
@@ -84,7 +77,7 @@ jobs:
       - name: Upload compact corpus
         uses: actions/upload-artifact@v4
         with:
-          name: taskmivra-v07-public-domain-speakers-12
+          name: taskmivra-v07-public-domain-speakers-12-streamed
           path: |
             corpus/wav16/*.wav
             corpus/PROVENANCE.json
