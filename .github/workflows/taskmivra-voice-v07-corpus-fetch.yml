@@ -25,6 +25,7 @@ jobs:
         shell: bash
         run: |
           set -eu
+          set +o pipefail
           mkdir -p corpus/wav16
           fetch_clip() {
             src="$1"; out="$2"
