@@ -28,24 +28,48 @@ def spectral_loss(est, target):
     diff = (torch.log1p(10 * est_spec.abs()) - torch.log1p(10 * tgt_spec.abs())).abs()
     freqs = torch.linspace(0, 24000, diff.shape[-2], device=diff.device)
     weights = torch.ones_like(freqs)
-    weights[(freqs >= 1000) & (freqs <= 8000)] = 1.6
+    weights[(freqs >= 1000) & (freqs <= 8000)] = 1.8
+    weights[(freqs >= 3000) & (freqs <= 8000)] = 2.1
     return (diff * weights[None, :, None]).mean()
+
+
+def waveform_identity_loss(est, target):
+    """Preserve the clean waveform and especially speech edges/transients."""
+    l1 = (est - target).abs().mean()
+    est_d = est[..., 1:] - est[..., :-1]
+    tgt_d = target[..., 1:] - target[..., :-1]
+    derivative = (est_d - tgt_d).abs().mean()
+    return l1 + 1.5 * derivative
+
+
+def clean_identity_loss(model, target, profile):
+    """Every batch contains an explicit clean->clean preservation exercise."""
+    clean_est, clean_mask = model(target, profile)
+    wave = waveform_identity_loss(clean_est, target)
+    spec = spectral_loss(clean_est, target)
+    # On clean speech the safest mask is close to unity. This discourages
+    # needless suppression that can create static, distance and broken syllables.
+    unity = (1.0 - clean_mask).abs().mean()
+    return wave + 1.25 * spec + 0.35 * unity
+
+
+def mask_stability_loss(mask):
+    """Penalize rapid time/frequency mask motion that sounds like crackle/water."""
+    time_delta = (mask[:, :, 1:] - mask[:, :, :-1]).abs().mean()
+    freq_delta = (mask[:, 1:, :] - mask[:, :-1, :]).abs().mean()
+    return time_delta + 0.35 * freq_delta
 
 
 def profile_margin_loss(model, mixture, target, positive_profile, negative_profile, has_negative):
     if has_negative.max().item() == 0:
         return mixture.new_tensor(0.0)
 
-    # Output-level requirement: correct profile must reconstruct the target
-    # more accurately than a competing profile.
     pos_est, _ = model(mixture, positive_profile)
     neg_est, _ = model(mixture, negative_profile)
     pos_score = si_sdr(pos_est, target)
     neg_score = si_sdr(neg_est, target)
     output_margin = torch.relu(1.5 - (pos_score - neg_score))
 
-    # Embedding-level requirement: a target-speech segment must be closer to
-    # its own enrolled profile than to the competing profile.
     target_emb = model.encode_profile(target)
     pos_emb = model.encode_profile(positive_profile)
     neg_emb = model.encode_profile(negative_profile)
@@ -69,6 +93,8 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--spectral-weight", type=float, default=1.8)
     ap.add_argument("--profile-weight", type=float, default=0.45)
+    ap.add_argument("--identity-weight", type=float, default=5.0)
+    ap.add_argument("--stability-weight", type=float, default=0.12)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -90,6 +116,8 @@ def main():
         total_loss = 0.0
         total_si_sdr = 0.0
         total_profile = 0.0
+        total_identity = 0.0
+        total_stability = 0.0
         started = time.time()
 
         for batch in loader:
@@ -104,11 +132,14 @@ def main():
             p_loss = profile_margin_loss(
                 model, mixture, target, profile, negative_profile, has_negative
             )
+            identity = clean_identity_loss(model, target, profile)
+            stability = mask_stability_loss(mask)
             loss = (
                 -score.mean()
                 + args.spectral_weight * spectral_loss(estimate, target)
                 + args.profile_weight * p_loss
-                + 0.003 * (mask[:, :, 1:] - mask[:, :, :-1]).abs().mean()
+                + args.identity_weight * identity
+                + args.stability_weight * stability
             )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -117,6 +148,8 @@ def main():
             total_loss += float(loss.detach())
             total_si_sdr += float(score.mean().detach())
             total_profile += float(p_loss.detach())
+            total_identity += float(identity.detach())
+            total_stability += float(stability.detach())
 
         batches = max(1, len(loader))
         meta = {
@@ -124,9 +157,12 @@ def main():
             "loss": total_loss / batches,
             "si_sdr": total_si_sdr / batches,
             "profile_margin_loss": total_profile / batches,
+            "clean_identity_loss": total_identity / batches,
+            "mask_stability_loss": total_stability / batches,
             "seconds": time.time() - started,
-            "architecture": "TaskMivraTargetSpeakerNet-v0.4",
+            "architecture": "TaskMivraTargetSpeakerNet-crystal-reference-v1",
             "pretrained_weights": False,
+            "benchmark_training_targets": False,
             "resume_source": str(args.resume) if args.resume else None,
         }
         print(json.dumps(meta), flush=True)
