@@ -8,6 +8,7 @@ N_FFT = 1024
 WIN_LENGTH = 960
 HOP_LENGTH = 480
 FREQ_BINS = N_FFT // 2 + 1
+MASK_FLOOR = 0.04
 
 
 def analysis_stft(wave: torch.Tensor) -> torch.Tensor:
@@ -67,7 +68,10 @@ class TaskMivraCausalSeparator(nn.Module):
         p = profile_embedding[:, None, :].expand(-1, x.shape[1], -1)
         x = self.condition(torch.cat([x, p], dim=-1))
         x, state = self.recurrent(x, state)
-        mask = torch.sigmoid(self.mask_head(x))
+        raw_mask = torch.sigmoid(self.mask_head(x))
+        # A small non-zero floor avoids frame/bin annihilation, one common
+        # source of crackle, watery speech and disappearing consonants.
+        mask = MASK_FLOOR + (1.0 - MASK_FLOOR) * raw_mask
         return mask, state
 
 
