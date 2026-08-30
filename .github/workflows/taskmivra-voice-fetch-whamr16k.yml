@@ -1,0 +1,42 @@
+name: TaskMivra Voice - Fetch WHAMR16K SepFormer
+
+on:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-fetch-whamr16k.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HF_HUB_DISABLE_XET: '1'
+
+jobs:
+  fetch-whamr16k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download Apache SepFormer WHAMR16K
+        run: |
+          set -euo pipefail
+          mkdir -p model
+          base='https://huggingface.co/speechbrain/sepformer-whamr16k/resolve/main'
+          for f in hyperparams.yaml encoder.ckpt decoder.ckpt masknet.ckpt brain.ckpt; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 "$base/$f?download=true" -o "model/$f"
+          done
+          find model -type f -print0 | sort -z | xargs -0 sha256sum > model/SHA256SUMS.txt
+          cat > model/RIGHTS.txt <<'EOF'
+          speechbrain/sepformer-whamr16k
+          Hugging Face model repository license: Apache-2.0.
+          Model card describes SepFormer trained on WHAMR at 16 kHz.
+          No TaskMivra/user audio is uploaded by this workflow.
+          EOF
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-sepformer-whamr16k
+          path: model/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
