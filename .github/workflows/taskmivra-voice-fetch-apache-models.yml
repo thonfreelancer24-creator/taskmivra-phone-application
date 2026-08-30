@@ -1,0 +1,70 @@
+name: TaskMivra Voice - Fetch Apache Models
+
+on:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-fetch-apache-models.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HF_HUB_DISABLE_XET: '1'
+
+jobs:
+  fetch-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare directories
+        run: |
+          set -euo pipefail
+          mkdir -p models/sepformer models/ecapa models/metricgan
+
+      - name: Download SpeechBrain SepFormer WSJ02Mix
+        run: |
+          set -euo pipefail
+          base='https://huggingface.co/speechbrain/sepformer-wsj02mix/resolve/main'
+          for f in hyperparams.yaml encoder.ckpt decoder.ckpt masknet.ckpt brain.ckpt; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 "$base/$f?download=true" -o "models/sepformer/$f"
+          done
+
+      - name: Download SpeechBrain ECAPA VoxCeleb
+        run: |
+          set -euo pipefail
+          base='https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb/resolve/main'
+          for f in hyperparams.yaml embedding_model.ckpt mean_var_norm_emb.ckpt classifier.ckpt label_encoder.txt; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 "$base/$f?download=true" -o "models/ecapa/$f"
+          done
+
+      - name: Download SpeechBrain MetricGAN Plus VoiceBank
+        run: |
+          set -euo pipefail
+          base='https://huggingface.co/speechbrain/metricgan-plus-voicebank/resolve/main'
+          for f in hyperparams.yaml enhance_model.ckpt; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 "$base/$f?download=true" -o "models/metricgan/$f"
+          done
+
+      - name: Record hashes and rights note
+        run: |
+          set -euo pipefail
+          find models -type f -print0 | sort -z | xargs -0 sha256sum > models/SHA256SUMS.txt
+          cat > models/RIGHTS.txt <<'EOF'
+          TaskMivra commercial-safe model fetch bundle.
+          Sources:
+          - speechbrain/sepformer-wsj02mix - Apache-2.0 model repository
+          - speechbrain/spkrec-ecapa-voxceleb - Apache-2.0 model repository
+          - speechbrain/metricgan-plus-voicebank - Apache-2.0 model repository
+          This workflow uploads model files only. No TaskMivra/user recordings are uploaded.
+          Production distribution must retain applicable Apache-2.0 notices and complete final dependency review.
+          EOF
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-voice-apache-models
+          path: models/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
