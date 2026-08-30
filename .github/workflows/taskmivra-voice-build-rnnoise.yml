@@ -1,0 +1,50 @@
+name: TaskMivra Voice - Build RNNoise
+
+on:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-build-rnnoise.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-rnnoise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config make gcc g++ git
+
+      - name: Clone pinned RNNoise
+        run: |
+          set -euo pipefail
+          git clone https://github.com/xiph/rnnoise.git rnnoise
+          cd rnnoise
+          git checkout 6cbfd53eb348a8d394e0757b4025c6ded34eb2b6
+          test "$(git rev-parse HEAD)" = "6cbfd53eb348a8d394e0757b4025c6ded34eb2b6"
+
+      - name: Build shared library
+        run: |
+          set -euo pipefail
+          cd rnnoise
+          ./autogen.sh
+          ./configure --prefix="$GITHUB_WORKSPACE/rnnoise-runtime" --enable-shared --disable-static
+          make -j2
+          make install
+          cp COPYING "$GITHUB_WORKSPACE/rnnoise-runtime/COPYING"
+          printf '%s\n' '6cbfd53eb348a8d394e0757b4025c6ded34eb2b6' > "$GITHUB_WORKSPACE/rnnoise-runtime/PINNED_COMMIT.txt"
+          find "$GITHUB_WORKSPACE/rnnoise-runtime" -type f -print0 | sort -z | xargs -0 sha256sum > "$GITHUB_WORKSPACE/rnnoise-runtime/SHA256SUMS.txt"
+
+      - name: Upload RNNoise artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-rnnoise-linux-x64
+          path: rnnoise-runtime/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
