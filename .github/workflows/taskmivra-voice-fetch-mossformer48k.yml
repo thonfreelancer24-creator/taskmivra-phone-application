@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           MODEL_REV='eff8c97925c8bec812af707814b3e5d777fd4503'
-          BASE="https://huggingface.co/ClearVoice/MossFormer2_SE_48K/resolve/${MODEL_REV}"
+          BASE="https://huggingface.co/alibabasglab/MossFormer2_SE_48K/resolve/${MODEL_REV}"
           for f in README.md last_best_checkpoint last_best_checkpoint.pt; do
             curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
               "$BASE/$f?download=true" -o "bundle/model/$f"
@@ -58,11 +58,11 @@ jobs:
           ClearerVoice-Studio source pinned commit:
           6b3774dc79c46ae8bed2a4fa5f706f0ac8c75c61
 
-          MossFormer2_SE_48K model pinned revision:
-          eff8c97925c8bec812af707814b3e5d777fd4503
+          MossFormer2_SE_48K public model repository:
+          alibabasglab/MossFormer2_SE_48K
+          Pinned revision: eff8c97925c8bec812af707814b3e5d777fd4503
 
-          Model repository metadata/README identifies MossFormer2_SE_48K pretrained weights as Apache-2.0.
-          ClearerVoice-Studio publishes Apache-2.0 as an available code license alongside its research license.
+          The public model repository declares license: apache-2.0 and describes these files as the MossFormer2_SE_48K model weights for ClearerVoice-Studio.
           Production distribution must retain applicable notices and complete a final transitive dependency/license review.
           EOF
           find bundle -type f -print0 | sort -z | xargs -0 sha256sum > bundle/SHA256SUMS.txt
