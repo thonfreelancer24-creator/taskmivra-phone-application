@@ -17,7 +17,7 @@ jobs:
       - name: Prepare directories
         run: |
           set -euo pipefail
-          mkdir -p bundle/source bundle/model bundle/wheels
+          mkdir -p bundle/source bundle/model
 
       - name: Fetch pinned ClearerVoice source
         run: |
@@ -42,12 +42,6 @@ jobs:
             curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
               "$BASE/$f?download=true" -o "bundle/model/$f"
           done
-
-      - name: Fetch lightweight offline dependencies
-        run: |
-          set -euo pipefail
-          python -m pip download --only-binary=:all: --dest bundle/wheels \
-            easydict==1.13 kaldiio==2.18.0 munkres==1.1.4 thop==0.1.1.post2209072238 resampy==0.4.3
 
       - name: Record provenance and hashes
         run: |
