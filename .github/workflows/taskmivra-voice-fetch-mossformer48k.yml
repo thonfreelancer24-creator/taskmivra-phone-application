@@ -1,0 +1,77 @@
+name: TaskMivra Voice - Fetch MossFormer2 48K
+
+on:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-fetch-mossformer48k.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-mossformer48k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Prepare directories
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/source bundle/model bundle/wheels
+
+      - name: Fetch pinned ClearerVoice source
+        run: |
+          set -euo pipefail
+          CODE_SHA='6b3774dc79c46ae8bed2a4fa5f706f0ac8c75c61'
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://github.com/modelscope/ClearerVoice-Studio/archive/${CODE_SHA}.tar.gz" \
+            -o source.tar.gz
+          tar -xzf source.tar.gz
+          root="ClearerVoice-Studio-${CODE_SHA}"
+          cp -a "$root/clearvoice" bundle/source/
+          for f in LICENSE LICENSE.txt NOTICE NOTICE.txt README.md requirements.txt; do
+            if [ -f "$root/$f" ]; then cp "$root/$f" bundle/source/; fi
+          done
+
+      - name: Fetch pinned MossFormer2 SE 48K model
+        run: |
+          set -euo pipefail
+          MODEL_REV='eff8c97925c8bec812af707814b3e5d777fd4503'
+          BASE="https://huggingface.co/ClearVoice/MossFormer2_SE_48K/resolve/${MODEL_REV}"
+          for f in README.md last_best_checkpoint last_best_checkpoint.pt; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
+              "$BASE/$f?download=true" -o "bundle/model/$f"
+          done
+
+      - name: Fetch lightweight offline dependencies
+        run: |
+          set -euo pipefail
+          python -m pip download --only-binary=:all: --dest bundle/wheels \
+            easydict==1.13 kaldiio==2.18.0 munkres==1.1.4 thop==0.1.1.post2209072238 resampy==0.4.3
+
+      - name: Record provenance and hashes
+        run: |
+          set -euo pipefail
+          cat > bundle/RIGHTS-AND-PROVENANCE.txt <<'EOF'
+          TaskMivra Voice evaluation bundle - no TaskMivra/user audio included.
+
+          ClearerVoice-Studio source pinned commit:
+          6b3774dc79c46ae8bed2a4fa5f706f0ac8c75c61
+
+          MossFormer2_SE_48K model pinned revision:
+          eff8c97925c8bec812af707814b3e5d777fd4503
+
+          Model repository metadata/README identifies MossFormer2_SE_48K pretrained weights as Apache-2.0.
+          ClearerVoice-Studio publishes Apache-2.0 as an available code license alongside its research license.
+          Production distribution must retain applicable notices and complete a final transitive dependency/license review.
+          EOF
+          find bundle -type f -print0 | sort -z | xargs -0 sha256sum > bundle/SHA256SUMS.txt
+
+      - name: Upload evaluation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-mossformer2-se-48k
+          path: bundle/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
