@@ -1,0 +1,28 @@
+name: TaskMivra Voice - Fetch Moss Runtime Wheels
+
+on:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-fetch-moss-runtime-wheels.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-wheels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download only required wheels
+        run: |
+          set -euo pipefail
+          mkdir -p wheels
+          python -m pip download --no-deps --dest wheels \
+            rotary-embedding-torch==0.8.3 torchinfo==1.8.0
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-moss-minimal-wheels
+          path: wheels/
+          retention-days: 1
+          if-no-files-found: error
