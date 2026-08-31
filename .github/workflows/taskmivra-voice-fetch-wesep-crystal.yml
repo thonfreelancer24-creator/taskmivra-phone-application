@@ -1,0 +1,94 @@
+name: TaskMivra Voice - Fetch Crystal WeSep
+
+on:
+  push:
+    paths:
+      - '.github/workflows/taskmivra-voice-fetch-wesep-crystal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-crystal-wesep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Prepare bundle
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/source bundle/model bundle/wheels
+
+      - name: Fetch pinned WeSep source
+        run: |
+          set -euo pipefail
+          WESEP_SHA='99eca54b60300d39b9353d93cf285a14bba37854'
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://github.com/wenet-e2e/wesep/archive/${WESEP_SHA}.tar.gz" -o wesep.tar.gz
+          tar -xzf wesep.tar.gz
+          cp -a "wesep-${WESEP_SHA}/wesep" bundle/source/
+          cp "wesep-${WESEP_SHA}/requirements.txt" bundle/source/wesep-requirements.txt
+          cp "wesep-${WESEP_SHA}/README.md" bundle/source/wesep-README.md
+
+      - name: Fetch pinned WeSpeaker source
+        run: |
+          set -euo pipefail
+          WESPEAKER_SHA='dfa741957e5c11f477623b6e583d67d0af25ee88'
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://github.com/wenet-e2e/wespeaker/archive/${WESPEAKER_SHA}.tar.gz" -o wespeaker.tar.gz
+          tar -xzf wespeaker.tar.gz
+          cp -a "wespeaker-${WESPEAKER_SHA}/wespeaker" bundle/source/
+          cp "wespeaker-${WESPEAKER_SHA}/setup.py" bundle/source/wespeaker-setup.py
+          cp "wespeaker-${WESPEAKER_SHA}/README.md" bundle/source/wespeaker-README.md
+
+      - name: Fetch exact locked Crystal WeSep model
+        run: |
+          set -euo pipefail
+          MODEL_URL='https://www.modelscope.cn/datasets/wenet/wesep_pretrained_models/resolve/master/bsrnn_ecapa_vox1.tar.gz'
+          curl --fail --location --retry 8 --retry-all-errors --connect-timeout 30 \
+            "$MODEL_URL" -o bsrnn_ecapa_vox1.tar.gz
+          tar -xzf bsrnn_ecapa_vox1.tar.gz -C bundle/model
+          find bundle/model -maxdepth 3 -type f -print
+          test -n "$(find bundle/model -name config.yaml -print -quit)"
+          test -n "$(find bundle/model -name avg_model.pt -print -quit)"
+
+      - name: Fetch small runtime wheels
+        run: |
+          set -euo pipefail
+          python -m pip download --only-binary=:all: --no-deps \
+            -d bundle/wheels \
+            'PyYAML==6.0.2' 'soundfile==0.12.1' 'tqdm==4.67.1' 'kaldiio==2.18.1' || true
+
+      - name: Record provenance and hashes
+        run: |
+          set -euo pipefail
+          cat > bundle/RIGHTS-AND-PROVENANCE.txt <<'EOF'
+          TaskMivra Voice evaluation bundle - no TaskMivra/user audio included.
+
+          Locked Crystal behavior target:
+          reference-conditioned WeSep BSRNN-ECAPA target speaker extraction
+          model asset name: bsrnn_ecapa_vox1.tar.gz
+
+          WeSep source pinned commit:
+          99eca54b60300d39b9353d93cf285a14bba37854
+          The relevant WeSep source files carry Apache-2.0 headers.
+
+          WeSpeaker source pinned commit:
+          dfa741957e5c11f477623b6e583d67d0af25ee88
+          WeSpeaker setup metadata declares Apache-2.0.
+
+          Exact model URL is the one hard-coded by the pinned WeSep Hub for the English model:
+          https://www.modelscope.cn/datasets/wenet/wesep_pretrained_models/resolve/master/bsrnn_ecapa_vox1.tar.gz
+
+          This is an evaluation artifact. Checkpoint-specific redistribution/commercial provenance must be reviewed separately before production distribution.
+          EOF
+          find bundle -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > bundle/SHA256SUMS.txt
+
+      - name: Upload evaluation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskmivra-crystal-wesep-bsrnn-ecapa
+          path: bundle/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
